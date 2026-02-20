@@ -1860,6 +1860,18 @@ type relayEventInfo struct {
 	Enabled bool   `json:"enabled"`
 }
 
+type streamerEventInfo struct {
+	Name         string   `json:"name"`
+	Mount        string   `json:"mount"`
+	State        int      `json:"state"`
+	CurrentSong  string   `json:"song"`
+	StartTime    int64    `json:"start_time"`
+	Duration     float64  `json:"duration"`
+	PlaylistPos  int      `json:"playlist_pos"`
+	PlaylistLen  int      `json:"playlist_len"`
+	Shuffle      bool     `json:"shuffle"`
+}
+
 func (s *Server) collectStatsPayload(user *config.User) ([]byte, error) {
 	bi, bo := s.Relay.GetMetrics()
 	allStreams := s.Relay.Snapshot()
@@ -1900,6 +1912,25 @@ func (s *Server) collectStatsPayload(user *config.User) ([]byte, error) {
 		}
 	}
 
+	activeStreamers := s.StreamerM.GetStreamers()
+	streamers := make([]streamerEventInfo, 0, len(activeStreamers))
+	for _, st := range activeStreamers {
+		if s.hasAccess(user, st.OutputMount) {
+			stats := st.GetStats()
+			streamers = append(streamers, streamerEventInfo{
+				Name:        stats.Name,
+				Mount:       stats.Mount,
+				State:       int(stats.State),
+				CurrentSong: stats.CurrentSong,
+				StartTime:   stats.StartTime.Unix(),
+				Duration:    stats.Duration.Seconds(),
+				PlaylistPos: stats.PlaylistPos,
+				PlaylistLen: stats.PlaylistLen,
+				Shuffle:     stats.Shuffle,
+			})
+		}
+	}
+
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
 	totalDropped := int64(0)
@@ -1916,6 +1947,7 @@ func (s *Server) collectStatsPayload(user *config.User) ([]byte, error) {
 		"total_streamers": ts,
 		"streams":         info,
 		"relays":          relays,
+		"streamers":       streamers,
 		"visible_mounts":  s.Config.VisibleMounts,
 		"sys_ram":         m.Sys,
 		"heap_alloc":      m.HeapAlloc,

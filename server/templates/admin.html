@@ -392,26 +392,25 @@
                     </section>
                     <section>
                         <h2>Active AutoDJs</h2>
-                                                <div id="autodj-list">
-                                                    {{range .Streamers}}
-                                                    {{$st := .}}
-                                                    <div class="card" style="margin-bottom: 1.5rem; padding: 1.5rem;">
-                                                        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1rem;">
-                                                            <div>
-                                                                <h3 style="margin: 0; display: flex; align-items: center; gap: 0.5rem;">
-                                                                    {{.Name}} 
-                                                                    <span class="status-pill {{if ne .State 1}}inactive{{end}}" style="font-size: 0.6rem; padding: 0.1rem 0.4rem;">
-                                                                        <div class="dot"></div> {{if eq .State 1}}LIVE{{else}}IDLE{{end}}
-                                                                    </span>
-                                                                </h3>
-                                                                                                        <div style="font-size: 0.8rem; color: var(--text-dim); margin-top: 0.2rem;">
+                                                                        <div id="autodj-list">
+                                                                            {{range .Streamers}}
+                                                                            {{$st := .}}
+                                                                            <div class="card autodj-card" data-mount="{{.OutputMount}}" style="margin-bottom: 1.5rem; padding: 1.5rem;">
+                                                                                <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1rem;">                                                            <div>
+                                                                                                        <h3 style="margin: 0; display: flex; align-items: center; gap: 0.5rem;">
+                                                                                                            {{.Name}} 
+                                                                                                            <span class="status-pill adj-status {{if ne .State 1}}inactive{{end}}" style="font-size: 0.6rem; padding: 0.1rem 0.4rem;">
+                                                                                                                <div class="dot"></div> <span class="adj-status-text">{{if eq .State 1}}LIVE{{else}}IDLE{{end}}</span>
+                                                                                                            </span>
+                                                                                                        </h3>                                                                                                        <div style="font-size: 0.8rem; color: var(--text-dim); margin-top: 0.2rem;">
                                                                                                             Mount: <span class="mount-code">{{.OutputMount}}</span> | 
                                                                                                             Format: <span style="font-weight: bold; color: var(--primary);">{{.Format}} {{.Bitrate}}K</span> |
                                                                                                             {{if .MPDServer}}MPD: <span style="color: var(--success); font-weight: bold;">PORT {{.MPDServer.Port}}</span> |{{end}}
                                                                                                             Dir: <span style="font-family: monospace; font-size: 0.75rem;">{{.MusicDir}}</span>
                                                                                                         </div>                                                            </div>
                                                                                                 <div style="display: flex; gap: 0.5rem; align-items: center;">
-                                                                                                    <button type="button" class="btn btn-outline btn-sm" title="Edit AutoDJ" onclick='showEditAutoDJ({ "Name": "{{.Name}}", "Mount": "{{.OutputMount}}", "MusicDir": "{{.MusicDir}}", "Format": "{{.Format}}", "Bitrate": {{.Bitrate}}, "Loop": {{.Loop}}, "InjectMetadata": {{.InjectMetadata}}, "MPDEnabled": {{if .MPDServer}}true{{else}}false{{end}}, "MPDPort": "{{if .MPDServer}}{{.MPDServer.Port}}{{end}}", "MPDPassword": "{{.MPDPassword}}" })'>
+                                                                                                    {{$stats := .GetStats}}
+                                                                                                    <button type="button" class="btn btn-outline btn-sm" title="Edit AutoDJ" onclick='showEditAutoDJ({ "Name": "{{$stats.Name}}", "Mount": "{{$stats.Mount}}", "MusicDir": "{{$stats.MusicDir}}", "Format": "{{.Format}}", "Bitrate": {{.Bitrate}}, "Loop": {{$stats.Loop}}, "InjectMetadata": {{$stats.InjectMetadata}}, "MPDEnabled": {{if $stats.MPDPort}}true{{else}}false{{end}}, "MPDPort": "{{$stats.MPDPort}}", "MPDPassword": "{{$stats.MPDPassword}}" })'>
                                                                                                         <i data-lucide="edit-3" style="width: 14px; height: 14px;"></i>
                                                                                                     </button>
                                                                                                     <div class="btn-group" style="display: flex; background: rgba(0,0,0,0.2); border-radius: 8px; padding: 2px;">
@@ -448,37 +447,37 @@
                                                                     <button type="submit" class="btn btn-danger btn-sm">DELETE</button>
                                                                 </form>
                                                             </div>
-                                                        </div>
-                        
-                                                                                        {{if eq .State 1}}
-                                                                                        <div style="background: rgba(0,0,0,0.2); padding: 1rem; border-radius: 8px; border: 1px solid var(--border);">
-                                                                                            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.5rem;">
-                                                                                                <div>
-                                                                                                    <div class="label" style="font-size: 0.7rem; color: var(--text-dim);">NOW PLAYING</div>
-                                                                                                    <div class="song-title" style="font-size: 1rem; color: var(--text); margin-bottom: 0.75rem;">
-                                                                                                        {{if .CurrentFile}}{{.CurrentFile}}{{else}}Preparing...{{end}}
+                                                                                        </div>
+                                                        
+                                                                                        <div class="adj-details" style="{{if ne .State 1}}display: none;{{end}}">
+                                                                                            <div style="background: rgba(0,0,0,0.2); padding: 1rem; border-radius: 8px; border: 1px solid var(--border);">
+                                                                                                <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.5rem;">
+                                                                                                    <div>
+                                                                                                        <div class="label" style="font-size: 0.7rem; color: var(--text-dim);">NOW PLAYING</div>
+                                                                                                        <div class="song-title adj-song" style="font-size: 1rem; color: var(--text); margin-bottom: 0.75rem;">
+                                                                                                            {{if .CurrentFile}}{{.CurrentFile}}{{else}}Preparing...{{end}}
+                                                                                                        </div>
+                                                                                                    </div>
+                                                                                                    <div style="display: flex; gap: 0.4rem;">
+                                                                                                        <form action="/admin/player/toggle" method="POST" style="margin:0;">
+                                                                                                            <input type="hidden" name="csrf" value="{{$.CSRFToken}}">
+                                                                                                            <input type="hidden" name="mount" value="{{.OutputMount}}">
+                                                                                                            <button type="submit" class="btn btn-outline btn-sm" style="padding: 0.3rem;" title="Pause/Stop Streamer"><i data-lucide="square" style="width: 12px; height: 12px; fill: currentColor;"></i></button>
+                                                                                                        </form>
                                                                                                     </div>
                                                                                                 </div>
-                                                                                                <div style="display: flex; gap: 0.4rem;">
-                                                                                                    <form action="/admin/player/toggle" method="POST" style="margin:0;">
-                                                                                                        <input type="hidden" name="csrf" value="{{$.CSRFToken}}">
-                                                                                                        <input type="hidden" name="mount" value="{{.OutputMount}}">
-                                                                                                        <button type="submit" class="btn btn-outline btn-sm" style="padding: 0.3rem;" title="Pause/Stop Streamer"><i data-lucide="square" style="width: 12px; height: 12px; fill: currentColor;"></i></button>
-                                                                                                    </form>
+                                                                                                <div style="height: 4px; background: var(--bg); border-radius: 2px; overflow: hidden; position: relative;" class="adj-progress-box">
+                                                                                                    <div class="progress-bar-adj" data-start="{{.CurrentFileTime.Unix}}" data-duration="{{.CurrentFileDuration.Seconds}}" style="height: 100%; background: var(--primary); width: 0%; transition: width 1s linear;"></div>
                                                                                                 </div>
-                                                                                            </div>
-                                                                                            <div style="height: 4px; background: var(--bg); border-radius: 2px; overflow: hidden; position: relative;">
-                                                                                                <div class="progress-bar-adj" data-start="{{.CurrentFileTime.Unix}}" data-duration="{{.CurrentFileDuration.Seconds}}" style="height: 100%; background: var(--primary); width: 0%; transition: width 1s linear;"></div>
-                                                                                            </div>
-                                                                                            <div style="display: flex; justify-content: space-between; margin-top: 0.4rem; font-size: 0.7rem; color: var(--text-dim); font-family: monospace;">
-                                                                                                <span class="progress-time-current">00:00</span>
-                                                                                                <div style="font-size: 0.7rem; color: var(--primary); font-family: monospace;">
-                                                                                                    Playlist: {{.CurrentPos}} / {{len .Playlist}}
+                                                                                                <div style="display: flex; justify-content: space-between; margin-top: 0.4rem; font-size: 0.7rem; color: var(--text-dim); font-family: monospace;">
+                                                                                                    <span class="progress-time-current">00:00</span>
+                                                                                                    <div style="font-size: 0.7rem; color: var(--primary); font-family: monospace;">
+                                                                                                        Playlist: <span class="adj-pos">{{.CurrentPos}}</span> / <span class="adj-len">{{len .Playlist}}</span>
+                                                                                                    </div>
+                                                                                                    <span class="progress-time-total" id="duration-{{.OutputMount}}">00:00</span>
                                                                                                 </div>
-                                                                                                <span class="progress-time-total" id="duration-{{.OutputMount}}">00:00</span>
                                                                                             </div>
                                                                                         </div>
-                                                                                        {{end}}
                         
                                                         <div style="margin-top: 1.5rem;">
                                                             {{if .Queue}}
@@ -669,19 +668,31 @@
             bars.forEach(bar => {
                 const startTime = parseInt(bar.dataset.start);
                 const duration = parseFloat(bar.dataset.duration);
-                if (!startTime || !duration) return;
+                const card = bar.closest('.card');
+                
+                if (!startTime || !duration || duration <= 0) {
+                    if (card) {
+                        const progressBox = card.querySelector('.adj-progress-box');
+                        if (progressBox) progressBox.style.opacity = '0.3';
+                    }
+                    return;
+                };
+                
+                const progressBox = card.querySelector('.adj-progress-box');
+                if (progressBox) progressBox.style.opacity = '1';
                 
                 const elapsed = Math.max(0, now - startTime);
+                // Cap at 100% to prevent the 5:23/3:00 issue before SSE syncs
                 const progress = Math.min(100, (elapsed / duration) * 100);
                 bar.style.width = progress + '%';
                 
-                const card = bar.closest('.card');
                 const currentEl = card.querySelector('.progress-time-current');
                 const totalEl = card.querySelector('.progress-time-total');
                 
                 if (currentEl) {
-                    const m = Math.floor(elapsed / 60).toString().padStart(2, '0');
-                    const s = Math.floor(elapsed % 60).toString().padStart(2, '0');
+                    const displayElapsed = Math.min(elapsed, Math.floor(duration));
+                    const m = Math.floor(displayElapsed / 60).toString().padStart(2, '0');
+                    const s = Math.floor(displayElapsed % 60).toString().padStart(2, '0');
                     currentEl.textContent = `${m}:${s}`;
                 }
                 if (totalEl) {
@@ -1134,6 +1145,40 @@
                         clone.querySelector('.row-kick-form input').value = s.mount; streamsBody.appendChild(clone);
                     });
                 }
+
+                if (data.streamers) {
+                    data.streamers.forEach(function(st) {
+                        const card = document.querySelector(`.autodj-card[data-mount="${st.mount}"]`);
+                        if (!card) return;
+
+                        const statusPill = card.querySelector('.adj-status');
+                        const statusText = card.querySelector('.adj-status-text');
+                        const songTitle = card.querySelector('.adj-song');
+                        const progressBar = card.querySelector('.progress-bar-adj');
+                        const adjPos = card.querySelector('.adj-pos');
+                        const adjLen = card.querySelector('.adj-len');
+                        const adjDetails = card.querySelector('.adj-details');
+
+                        if (st.state === 1) { // Playing
+                            statusPill.classList.remove('inactive');
+                            statusText.textContent = 'LIVE';
+                            if (adjDetails) adjDetails.style.display = 'block';
+                            if (songTitle) songTitle.textContent = st.song || 'Preparing...';
+                            if (progressBar) {
+                                // IMPORTANT: Update these to reset the timeline
+                                progressBar.dataset.start = st.start_time;
+                                progressBar.dataset.duration = st.duration;
+                            }
+                            if (adjPos) adjPos.textContent = st.playlist_pos;
+                            if (adjLen) adjLen.textContent = st.playlist_len;
+                        } else {
+                            statusPill.classList.add('inactive');
+                            statusText.textContent = 'IDLE';
+                            if (adjDetails) adjDetails.style.display = 'none';
+                        }
+                    });
+                }
+
                 if (relaysBody && data.relays) {
                     relaysBody.innerHTML = '';
                     data.relays.forEach(function(r) {

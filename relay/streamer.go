@@ -201,6 +201,52 @@ func (s *Streamer) RemoveFromPlaylist(idx int) {
 	}
 }
 
+type StreamerStats struct {
+	Name         string
+	Mount        string
+	State        StreamerState
+	CurrentSong  string
+	StartTime    time.Time
+	Duration     time.Duration
+	PlaylistPos  int
+	PlaylistLen  int
+	Shuffle      bool
+	MPDPort      string
+	MPDPassword  string
+	MusicDir     string
+	Loop         bool
+	InjectMetadata bool
+}
+
+func (s *Streamer) GetStats() StreamerStats {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	
+	mpdPort := ""
+	mpdPassword := ""
+	if s.MPDServer != nil {
+		mpdPort = s.MPDServer.Port
+		mpdPassword = s.MPDPassword
+	}
+
+	return StreamerStats{
+		Name:           s.Name,
+		Mount:          s.OutputMount,
+		State:          s.State,
+		CurrentSong:    s.CurrentFile,
+		StartTime:      s.CurrentFileTime,
+		Duration:       s.CurrentFileDuration,
+		PlaylistPos:    s.CurrentPos,
+		PlaylistLen:    len(s.Playlist),
+		Shuffle:        s.Shuffle,
+		MPDPort:        mpdPort,
+		MPDPassword:    mpdPassword,
+		MusicDir:       s.MusicDir,
+		Loop:           s.Loop,
+		InjectMetadata: s.InjectMetadata,
+	}
+}
+
 func (sm *StreamerManager) StartStreamer(name, mount, musicDir string, loop bool, format string, bitrate int, injectMetadata bool, initialPlaylist []string, mpdEnabled bool, mpdPort, mpdPassword string) (*Streamer, error) {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
