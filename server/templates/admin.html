@@ -13,37 +13,37 @@
             --text: #f1f5f9; --text-dim: #94a3b8; --border: #2d3748;
             --success: #10b981; --danger: #f87171; --warning: #f59e0b;
         }
-        body { font-family: 'Inter', system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); margin: 0; line-height: 1.5; overflow: hidden; }
+        body { font-family: 'Inter', system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); margin: 0; line-height: 1.4; overflow: hidden; font-size: 0.9rem; }
         .app-container { display: flex; height: 100vh; width: 100vw; }
-        aside { background: var(--surface); border-right: 1px solid var(--border); padding: 2rem; display: flex; flex-direction: column; width: 280px; height: 100vh; box-sizing: border-box; flex-shrink: 0; }
-        .logo-img { width: 100%; max-width: 180px; margin-bottom: 2rem; display: block; }
-        main { flex: 1; padding: 2.5rem; height: 100vh; overflow-y: auto; box-sizing: border-box; min-width: 0; }
-        h2 { font-size: 1.25rem; font-weight: 600; margin-bottom: 1.5rem; display: flex; align-items: center; gap: 0.75rem; }
-        h2::before { content: ''; width: 4px; height: 1.25rem; background: var(--primary); border-radius: 2px; }
-        .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; margin-bottom: 2rem; }
-        .stat-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1.5rem; margin-bottom: 2rem; }
-        .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 1.5rem; text-align: center; }
-        .stat-card .label { color: var(--text-dim); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 0.5rem; }
-        .stat-card .value { font-size: 2.5rem; font-weight: 800; color: var(--primary); }
-        .btn { display: inline-flex; align-items: center; justify-content: center; padding: 0.6rem 1.2rem; border-radius: 8px; font-weight: 600; font-size: 0.9rem; cursor: pointer; transition: all 0.2s; text-decoration: none; border: none; }
+        aside { background: var(--surface); border-right: 1px solid var(--border); padding: 1.5rem; display: flex; flex-direction: column; width: 240px; height: 100vh; box-sizing: border-box; flex-shrink: 0; }
+        .logo-img { width: 100%; max-width: 150px; margin-bottom: 1.5rem; display: block; }
+        main { flex: 1; padding: 2rem; height: 100vh; overflow-y: auto; box-sizing: border-box; min-width: 0; }
+        h2 { font-size: 1.1rem; font-weight: 600; margin-bottom: 1.25rem; display: flex; align-items: center; gap: 0.75rem; }
+        h2::before { content: ''; width: 4px; height: 1.1rem; background: var(--primary); border-radius: 2px; }
+        .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1.25rem; margin-bottom: 1.5rem; }
+        .stat-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1.5rem; }
+        .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 1.25rem; text-align: center; }
+        .stat-card .label { color: var(--text-dim); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 0.5rem; }
+        .stat-card .value { font-size: 2rem; font-weight: 800; color: var(--primary); }
+        .btn { display: inline-flex; align-items: center; justify-content: center; padding: 0.5rem 1rem; border-radius: 8px; font-weight: 600; font-size: 0.85rem; cursor: pointer; transition: all 0.2s; text-decoration: none; border: none; }
         .btn-primary { background: var(--primary); color: var(--bg); }
         .btn-outline { border: 1px solid var(--border); color: var(--text); background: transparent; }
         .btn-outline:hover { background: var(--surface-hover); }
-        .btn-sm { padding: 0.35rem 0.75rem; font-size: 0.8rem; }
+        .btn-sm { padding: 0.3rem 0.6rem; font-size: 0.75rem; }
         .btn-danger { background: rgba(248, 113, 113, 0.1); color: var(--danger); border: 1px solid rgba(248, 113, 113, 0.2); }
         .btn-danger:hover { background: var(--danger); color: var(--bg); }
         .btn-warning { background: rgba(245, 158, 11, 0.1); color: var(--warning); border: 1px solid rgba(245, 158, 11, 0.2); }
         .btn-warning:hover { background: var(--warning); color: var(--bg); }
         table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-        th { text-align: left; font-size: 0.75rem; color: var(--text-dim); text-transform: uppercase; padding: 1rem; border-bottom: 1px solid var(--border); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        td { padding: 1rem; border-bottom: 1px solid var(--border); font-size: 0.9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .mount-code { font-family: ui-monospace, monospace; color: var(--primary); background: rgba(56, 189, 248, 0.1); padding: 0.2rem 0.4rem; border-radius: 4px; }
+        th { text-align: left; font-size: 0.7rem; color: var(--text-dim); text-transform: uppercase; padding: 0.75rem; border-bottom: 1px solid var(--border); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        td { padding: 0.75rem; border-bottom: 1px solid var(--border); font-size: 0.85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .mount-code { font-family: ui-monospace, monospace; color: var(--primary); background: rgba(56, 189, 248, 0.1); padding: 0.15rem 0.35rem; border-radius: 4px; font-size: 0.85rem; }
         .mount-disabled { text-decoration: line-through; color: var(--text-dim); }
-        .form-group { margin-bottom: 1.25rem; }
-        label { display: block; font-size: 0.85rem; color: var(--text-dim); margin-bottom: 0.5rem; }
-        input, select { width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 0.75rem; color: var(--text); box-sizing: border-box; }
-        .nav-link { display: flex; align-items: center; gap: 0.75rem; color: var(--text-dim); text-decoration: none; padding: 0.75rem 1rem; border-radius: 8px; margin-bottom: 0.5rem; cursor: pointer; border: none; background: transparent; width: 100%; text-align: left; font-size: 1rem; }
-        .nav-link i, .nav-link svg { width: 1.25rem; height: 1.25rem; }
+        .form-group { margin-bottom: 1rem; }
+        label { display: block; font-size: 0.8rem; color: var(--text-dim); margin-bottom: 0.4rem; }
+        input, select { width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 0.6rem; color: var(--text); box-sizing: border-box; font-size: 0.85rem; }
+        .nav-link { display: flex; align-items: center; gap: 0.75rem; color: var(--text-dim); text-decoration: none; padding: 0.6rem 0.8rem; border-radius: 8px; margin-bottom: 0.25rem; cursor: pointer; border: none; background: transparent; width: 100%; text-align: left; font-size: 0.9rem; }
+        .nav-link i, .nav-link svg { width: 1.1rem; height: 1.1rem; }
         .nav-link:hover { background: var(--surface-hover); color: var(--text); }
         .nav-link.active { color: var(--primary); background: var(--primary-glow); font-weight: 600; }
         .tab-content { display: none; }
@@ -75,17 +75,27 @@
             </a>
             <div id="sidebar-nav">
                 <button class="nav-link active" onclick="showTab('tab-overview')"><i data-lucide="layout-dashboard"></i> Dashboard</button>
+                
+                <div style="margin: 1rem 0 0.5rem 0.8rem; font-size: 0.65rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px;">Broadcasting</div>
                 <button class="nav-link" onclick="showTab('tab-stations')"><i data-lucide="tower-control"></i> Your Stations</button>
-                <button class="nav-link" onclick="showTab('tab-history')"><i data-lucide="file-audio"></i> Play History</button>
-                {{if eq .User.Role "superadmin"}}
-                <button class="nav-link" onclick="showTab('tab-users')"><i data-lucide="users"></i> User Management</button>
-                <button class="nav-link" onclick="showTab('tab-relays')"><i data-lucide="refresh-ccw"></i> Edge Relays</button>
                 <button class="nav-link" onclick="showTab('tab-streamer')"><i data-lucide="play-circle"></i> AutoDJ</button>
+                
+                {{if eq .User.Role "superadmin"}}
+                <button class="nav-link" onclick="showTab('tab-relays')"><i data-lucide="refresh-ccw"></i> Edge Relays</button>
                 <button class="nav-link" onclick="showTab('tab-transcoding')"><i data-lucide="scissors"></i> Transcoding</button>
+                
+                <div style="margin: 1rem 0 0.5rem 0.8rem; font-size: 0.65rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px;">Observability</div>
+                {{end}}
+                <button class="nav-link" onclick="showTab('tab-history')"><i data-lucide="file-audio"></i> Play History</button>
+                <button class="nav-link" onclick="showTab('tab-insights')"><i data-lucide="trending-up"></i> Insights</button>
+
+                {{if eq .User.Role "superadmin"}}
+                <div style="margin: 1rem 0 0.5rem 0.8rem; font-size: 0.65rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px;">Administration</div>
+                <button class="nav-link" onclick="showTab('tab-users')"><i data-lucide="users"></i> User Management</button>
                 <button class="nav-link" onclick="showTab('tab-webhooks')"><i data-lucide="webhook"></i> Webhooks</button>
                 <button class="nav-link" onclick="showTab('tab-security')"><i data-lucide="shield-check"></i> Security & Bans</button>
                 {{end}}
-                <button class="nav-link" onclick="showTab('tab-insights')"><i data-lucide="trending-up"></i> Insights</button>
+                
                 <a href="/logout" class="nav-link" style="color: var(--danger); margin-top: 1rem; text-decoration: none;"><i data-lucide="log-out"></i> Sign Out</a>
             </div>
             <div style="margin-top: auto; padding-top: 2rem;">

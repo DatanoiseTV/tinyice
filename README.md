@@ -43,10 +43,11 @@ Traditional streaming servers can be complex to configure and resource-heavy. Ti
 -   **Instant Start**: Listeners receive a 64KB audio burst upon connection, eliminating the "buffering" delay common in traditional servers.
 -   **High-Performance Distribution**: Shared circular buffer architecture designed for 100,000+ concurrent listeners per stream.
 -   **Icecast2 Compatible**: Works with standard source clients (BUTT, OBS, Mixxx, LadioCast) and players (VLC, web browsers).
--   **Approvals Workflow**: New streams are hidden by default until approved by an administrator.
--   **Integrated AutoDJ**: Automated 24/7 broadcasting from local music directories. Supports recursive folder scanning, shuffle mode, and manual queue management.
--   **Dedicated MPD Servers**: Optionally expose a standard MPD (Music Player Daemon) server for each AutoDJ instance for remote control via standard clients.
--   **Stream Relaying**: Act as an edge node by pulling streams from remote servers.
+-   **Precision AutoDJ Automation**: High-fidelity 24/7 broadcasting from local music libraries. Features frame-accurate pacing, recursive folder management, smart shuffle, and manual queue prioritization.
+-   **Per-Instance MPD Integration**: Every AutoDJ can expose its own dedicated Music Player Daemon (MPD) server, allowing professional remote control via any standard client with optional password protection.
+-   **Hardened Security Perimeter**: Integrated TCP-level IP banning that drops malicious connections before they reach the application layer, combined with intelligent connection-scanning detection.
+-   **Real-Time SSE Dashboard**: A modern, zero-latency administrative interface with AJAX-powered transport controls and live hardware-accelerated traffic visualization.
+-   **High-Performance Relay & Transcoding**: Act as a transparent edge node or a high-quality transcoder (MP3/Opus) with zero external dependencies.
 -   **Outbound ICY Metadata**: Injects song titles directly into the audio stream, ensuring "Now Playing" info appears on all traditional radio players (VLC, Winamp, etc.).
 -   **Built-in Transcoding**: High-performance, pure Go transcoding (MP3/Opus) to provide multiple quality options or formats for a single source.
 -   **Web-Based Audio Player**: Every station gets a dedicated, modern player page with real-time metadata and a reactive audio visualizer.
@@ -168,15 +169,16 @@ TinyIce includes a built-in, CGO-free transcoder that allows you to take one inp
 
 > **Note**: Currently supporting MP3 (128kbps fixed) and Opus.
 
-### AutoDJ (Internal Streamer)
-TinyIce features a built-in AutoDJ that allows you to stream local music files automatically.
+### Broadcast-Grade AutoDJ
+TinyIce includes a sophisticated internal automation engine designed for reliable, 24/7 autonomous broadcasting.
 
-- **Multi-Instance**: Run multiple independent AutoDJs on different mount points.
-- **Recursive Library**: Browse and add entire folders or individual tracks recursively.
-- **MPD Compatible**: Optionally expose a dedicated MPD server for each instance (with optional password protection).
-- **Advanced Management**: Drag-and-drop playlist reordering, manual queueing, and shuffle mode.
-- **Real-time Monitoring**: Track song progress and monitor playback directly from the Admin Dashboard.
-- **Auto-Transcoding**: Stream your local MP3s in either MP3 or Opus format at any bitrate.
+- **Multi-Instance Orchestration**: Instantiate and manage multiple independent AutoDJs on different mount points from a single server.
+- **Deep Recursive Library**: Advanced file browser with the ability to add entire directory trees or specific tracks recursively.
+- **Protocol Compatibility**: Full MPD protocol support per instance, including password authentication and support for standard transport commands.
+- **Precision Pacing**: Frame-accurate bitstream pacing ensures that file-based streams behave exactly like live broadcasts with zero drift.
+- **Pro Transport Controls**: Non-destructive "Skip Next", "Smart Shuffle", and "Priority Queue" management via a latency-free AJAX UI.
+- **Dynamic Meta-Injection**: Automatic ID3 tag extraction and real-time ICY metadata injection for a professional listener experience.
+- **On-the-Fly Transcoding**: Stream your library in high-fidelity Opus or standard MP3 with customizable bitrates.
 
 **Example Filter (`/etc/fail2ban/filter.d/tinyice.conf`):**
 ```ini
