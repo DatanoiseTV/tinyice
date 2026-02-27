@@ -5,8 +5,21 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>TinyIce Admin</title>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
     <script src="/assets/js/lucide.min.js"></script>
     <script src="/assets/js/Sortable.min.js"></script>
+    <style>
+        .htmx-indicator {
+            opacity: 0;
+            transition: opacity 200ms ease-in;
+        }
+        .htmx-request .htmx-indicator {
+            opacity: 1;
+        }
+        .htmx-request.htmx-indicator {
+            opacity: 1;
+        }
+    </style>
     <style>
         :root {
             --bg: #0b0f1a;
@@ -769,20 +782,17 @@
                                             <div style="display:flex; gap:0.3rem"><button type="button"
                                                     class="btn btn-outline btn-sm edit-mount"
                                                     data-mount="{{$mount}}">EDIT</button>
-                                                <form action="/admin/toggle-visible" method="POST"
-                                                    onsubmit="return submitForm(event, false)"><input type="hidden"
+                                                <form hx-post="/admin/toggle-visible" hx-target="closest .btn" hx-swap="outerHTML"><input type="hidden"
                                                         name="csrf" value="{{$.CSRFToken}}"><input type="hidden"
                                                         name="mount" value="{{$mount}}"><button type="submit"
                                                         class="btn {{if $visible}}btn-outline{{else}}btn-primary{{end}} btn-sm">{{if
                                                         $visible}}HIDE{{else}}APPROVE{{end}}</button></form>
-                                                <form action="/admin/toggle-mount" method="POST"
-                                                    onsubmit="return submitForm(event, false)"><input type="hidden"
+                                                <form hx-post="/admin/toggle-mount" hx-target="closest .btn" hx-swap="outerHTML"><input type="hidden"
                                                         name="csrf" value="{{$.CSRFToken}}"><input type="hidden"
                                                         name="mount" value="{{$mount}}"><button type="submit"
                                                         class="btn {{if $disabled}}btn-primary{{else}}btn-warning{{end}} btn-sm">{{if
                                                         $disabled}}ENABLE{{else}}DISABLE{{end}}</button></form>
-                                                <form action="/admin/remove-mount" method="POST"
-                                                    onsubmit="if(confirm('Remove?')) return submitForm(event, true)">
+                                                <form hx-post="/admin/remove-mount" hx-target="closest tr" hx-swap="delete" hx-confirm="Remove this mount?">
                                                     <input type="hidden" name="csrf" value="{{$.CSRFToken}}"><input
                                                         type="hidden" name="mount" value="{{$mount}}"><button
                                                         type="submit" class="btn btn-danger btn-sm">REMOVE</button>
@@ -809,15 +819,13 @@
                                             <div style="display:flex;gap:0.3rem"><button type="button"
                                                     class="btn btn-outline btn-sm edit-mount"
                                                     data-mount="{{$mount}}">EDIT</button>
-                                                <form action="/admin/toggle-visible" method="POST"
-                                                    onsubmit="return submitForm(event, false)"><input type="hidden"
+                                                <form hx-post="/admin/toggle-visible" hx-target="closest .btn" hx-swap="outerHTML"><input type="hidden"
                                                         name="csrf" value="{{$.CSRFToken}}"><input type="hidden"
                                                         name="mount" value="{{$mount}}"><button type="submit"
                                                         class="btn {{if $visible}}btn-outline{{else}}btn-primary{{end}} btn-sm">{{if
                                                         $visible}}HIDE{{else}}APPROVE{{end}}</button></form>
-                                                <form action="/admin/remove-mount" method="POST"
-                                                    onsubmit="return submitForm(event, false)"><input type="hidden"
-                                                        name="csrf" value="{{$.CSRFToken}}"><input type="hidden"
+                                                <form hx-post="/admin/remove-mount" hx-target="closest tr" hx-swap="delete" hx-confirm="Remove this mount?">
+                                                    <input type="hidden" name="csrf" value="{{$.CSRFToken}}"><input type="hidden"
                                                         name="mount" value="{{$mount}}"><button type="submit"
                                                         class="btn btn-danger btn-sm">REMOVE</button></form>
                                             </div>
@@ -942,7 +950,7 @@
                     <section>
                         <h2>Create Admin</h2>
                         <div class="card">
-                            <form action="/admin/add-user" method="POST" onsubmit="return submitForm(event, true)">
+                            <form hx-post="/admin/add-user" hx-target="#users-tbody" hx-swap="beforeend">
                                 <input type="hidden" name="csrf" value="{{$.CSRFToken}}">
                                 <div class="form-group"><label>Username</label><input type="text" name="username"
                                         required></div>
@@ -962,11 +970,10 @@
                                         <th style="width:30%">Action</th>
                                     </tr>
                                 </thead>
-                                <tbody>{{range .Config.Users}}<tr>
+                                <tbody id="users-tbody">{{range .Config.Users}}<tr>
                                         <td>{{.Username}}</td>
                                         <td>{{.Role}}</td>
-                                        <td>{{if ne .Role "superadmin"}}<form action="/admin/remove-user" method="POST"
-                                                onsubmit="return submitForm(event, false)"><input type="hidden"
+                                        <td>{{if ne .Role "superadmin"}}<form hx-post="/admin/remove-user" hx-target="closest tr" hx-swap="delete"><input type="hidden"
                                                     name="csrf" value="{{$.CSRFToken}}"><input type="hidden"
                                                     name="username" value="{{.Username}}"><button type="submit"
                                                     class="btn btn-danger btn-sm">DELETE</button></form>{{end}}</td>
@@ -1505,8 +1512,7 @@
                     <section>
                         <h2>Ban Address or Range</h2>
                         <div class="card">
-                            <form action="/admin/add-banned-ip" method="POST"
-                                onsubmit="return submitForm(event, true)">
+                            <form hx-post="/admin/add-banned-ip" hx-target="#banned-ips-tbody" hx-swap="innerHTML">
                                 <input type="hidden" name="csrf" value="{{$.CSRFToken}}">
                                 <div class="form-group">
                                     <label>IP Address or CIDR Range</label>
@@ -1526,13 +1532,12 @@
                                         <th style="width:30%">Action</th>
                                     </tr>
                                 </thead>
-                                <tbody>
+                                <tbody id="banned-ips-tbody">
                                     {{range .Config.BannedIPs}}
                                     <tr>
                                         <td>{{.}}</td>
                                         <td>
-                                            <form action="/admin/remove-banned-ip" method="POST"
-                                                onsubmit="return submitForm(event, false)">
+                                            <form hx-post="/admin/remove-banned-ip" hx-target="closest tr" hx-swap="delete">
                                                 <input type="hidden" name="csrf" value="{{$.CSRFToken}}">
                                                 <input type="hidden" name="ip" value="{{.}}">
                                                 <button type="submit" class="btn btn-outline btn-sm">Unban</button>
@@ -1554,7 +1559,7 @@
                     <section>
                         <h2>Whitelist Address or Range</h2>
                         <div class="card">
-                            <form action="/admin/add-whitelisted-ip" method="POST">
+                            <form hx-post="/admin/add-whitelisted-ip" hx-target="#whitelist-tbody" hx-swap="innerHTML">
                                 <input type="hidden" name="csrf" value="{{$.CSRFToken}}">
                                 <div class="form-group">
                                     <label>IP Address or CIDR Range</label>
@@ -1579,7 +1584,7 @@
                                     <tr>
                                         <td>{{.}}</td>
                                         <td>
-                                            <form action="/admin/remove-whitelisted-ip" method="POST" class="remove-whitelist-form">
+                                            <form hx-post="/admin/remove-whitelisted-ip" hx-target="closest tr" hx-swap="delete" class="remove-whitelist-form">
                                                 <input type="hidden" name="csrf" value="{{$.CSRFToken}}">
                                                 <input type="hidden" name="ip" value="{{.}}">
                                                 <button type="submit" class="btn btn-outline btn-sm">Remove</button>
@@ -1844,6 +1849,21 @@
         </tr>
     </template>
     <script>
+        htmx.config.defaultSwapStyle = 'outerHTML';
+        htmx.config.defaultTransition = true;
+        
+        document.addEventListener('htmx:configRequest', (e) => {
+            e.detail.headers['X-CSRF-Token'] = csrfToken;
+        });
+
+        document.addEventListener('htmx:afterSwap', () => {
+            lucide.createIcons();
+        });
+
+        document.body.addEventListener('htmx:afterRequest', (e) => {
+            lucide.createIcons();
+        });
+
         const csrfToken = "{{.CSRFToken}}";
 
         function submitForm(event, reload = false, onSuccess) {

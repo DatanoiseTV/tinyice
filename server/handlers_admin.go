@@ -13,6 +13,10 @@ import (
 	"github.com/DatanoiseTV/tinyice/relay"
 )
 
+func (s *Server) isHTMXRequest(r *http.Request) bool {
+	return r.Header.Get("HX-Request") == "true"
+}
+
 func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 	user, ok := s.checkAuth(r)
 	if !ok {
@@ -166,6 +170,11 @@ func (s *Server) handleRemoveMount(w http.ResponseWriter, r *http.Request) {
 	delete(user.Mounts, mount)
 	s.Relay.RemoveStream(mount)
 	s.Config.SaveConfig()
+	if s.isHTMXRequest(r) {
+		w.Header().Set("Content-Type", "text/html")
+		w.Write([]byte(""))
+		return
+	}
 	http.Redirect(w, r, "/admin", http.StatusSeeOther)
 }
 
@@ -250,6 +259,18 @@ func (s *Server) handleToggleMount(w http.ResponseWriter, r *http.Request) {
 		}
 		s.Config.SaveConfig()
 	}
+	if s.isHTMXRequest(r) {
+		w.Header().Set("Content-Type", "text/html")
+		disabled := s.Config.DisabledMounts[mount]
+		buttonText := "DISABLE"
+		btnClass := "btn-warning"
+		if disabled {
+			buttonText = "ENABLE"
+			btnClass = "btn-primary"
+		}
+		fmt.Fprintf(w, `<button type="submit" class="btn %s btn-sm" hx-post="/admin/toggle-mount" hx-vals='{"mount": "%s"}' hx-target="closest .btn" hx-swap="outerHTML">%s</button>`, btnClass, mount, buttonText)
+		return
+	}
 	http.Redirect(w, r, "/admin", http.StatusSeeOther)
 }
 
@@ -267,6 +288,18 @@ func (s *Server) handleToggleVisible(w http.ResponseWriter, r *http.Request) {
 		s.Config.SaveConfig()
 		logger.L.Infow("Admin toggled visibility", "mount", mount, "visible", s.Config.VisibleMounts[mount])
 	}
+	if s.isHTMXRequest(r) {
+		w.Header().Set("Content-Type", "text/html")
+		visible := s.Config.VisibleMounts[mount]
+		buttonText := "APPROVE"
+		btnClass := "btn-primary"
+		if visible {
+			buttonText = "HIDE"
+			btnClass = "btn-outline"
+		}
+		fmt.Fprintf(w, `<button type="submit" class="btn %s btn-sm" hx-post="/admin/toggle-visible" hx-vals='{"mount": "%s"}' hx-target="closest .btn" hx-swap="outerHTML">%s</button>`, btnClass, mount, buttonText)
+		return
+	}
 	http.Redirect(w, r, "/admin", http.StatusSeeOther)
 }
 
@@ -283,6 +316,18 @@ func (s *Server) handleAddUser(w http.ResponseWriter, r *http.Request) {
 			s.Config.SaveConfig()
 		}
 	}
+	if s.isHTMXRequest(r) {
+		w.Header().Set("Content-Type", "text/html")
+		for _, u := range s.Config.Users {
+			if u.Role != "superadmin" {
+				fmt.Fprintf(w, `<tr><td>%s</td><td>%s</td><td><form hx-post="/admin/remove-user" hx-target="closest tr" hx-swap="outerHTML" hx-vals='{"username": "%s"}'><input type="hidden" name="csrf" value="%s"><input type="hidden" name="username" value="%s"><button type="submit" class="btn btn-danger btn-sm">DELETE</button></form></td></tr>`,
+					u.Username, u.Role, u.Username, r.FormValue("csrf"), u.Username)
+			} else {
+				fmt.Fprintf(w, `<tr><td>%s</td><td>%s</td><td></td></tr>`, u.Username, u.Role)
+			}
+		}
+		return
+	}
 	http.Redirect(w, r, "/admin", http.StatusSeeOther)
 }
 
@@ -298,6 +343,11 @@ func (s *Server) handleRemoveUser(w http.ResponseWriter, r *http.Request) {
 			s.Config.SaveConfig()
 		}
 	}
+	if s.isHTMXRequest(r) {
+		w.Header().Set("Content-Type", "text/html")
+		w.Write([]byte(""))
+		return
+	}
 	http.Redirect(w, r, "/admin", http.StatusSeeOther)
 }
 
@@ -312,6 +362,18 @@ func (s *Server) handleAddBannedIP(w http.ResponseWriter, r *http.Request) {
 			s.Config.BannedIPs = append(s.Config.BannedIPs, ip)
 			s.Config.SaveConfig()
 		}
+	}
+	if s.isHTMXRequest(r) {
+		w.Header().Set("Content-Type", "text/html")
+		csrf := r.FormValue("csrf")
+		for _, bannedIP := range s.Config.BannedIPs {
+			fmt.Fprintf(w, `<tr><td>%s</td><td><form hx-post="/admin/remove-banned-ip" hx-target="closest tr" hx-swap="outerHTML" hx-vals='{"ip": "%s"}'><input type="hidden" name="csrf" value="%s"><input type="hidden" name="ip" value="%s"><button type="submit" class="btn btn-outline btn-sm">Unban</button></form></td></tr>`,
+				bannedIP, bannedIP, csrf, bannedIP)
+		}
+		if len(s.Config.BannedIPs) == 0 {
+			w.Write([]byte(`<tr><td colspan="2" style="text-align:center; padding:2rem">No active bans.</td></tr>`))
+		}
+		return
 	}
 	http.Redirect(w, r, "/admin", http.StatusSeeOther)
 }
@@ -330,6 +392,11 @@ func (s *Server) handleRemoveBannedIP(w http.ResponseWriter, r *http.Request) {
 				break
 			}
 		}
+	}
+	if s.isHTMXRequest(r) {
+		w.Header().Set("Content-Type", "text/html")
+		w.Write([]byte(""))
+		return
 	}
 	http.Redirect(w, r, "/admin", http.StatusSeeOther)
 }
@@ -364,6 +431,28 @@ func (s *Server) handleAddWhitelistedIP(w http.ResponseWriter, r *http.Request) 
 	sort.Strings(s.Config.WhitelistedIPs)
 	s.Config.SaveConfig()
 
+	if s.isHTMXRequest(r) {
+		w.Header().Set("Content-Type", "text/html")
+		csrf := r.FormValue("csrf")
+		if csrf == "" {
+			if cookie, err := r.Cookie("sid"); err == nil {
+				s.sessionsMu.RLock()
+				if sess, ok := s.sessions[cookie.Value]; ok {
+					csrf = sess.CSRFToken
+				}
+				s.sessionsMu.RUnlock()
+			}
+		}
+		for _, whiteIP := range s.Config.WhitelistedIPs {
+			fmt.Fprintf(w, `<tr><td>%s</td><td><form hx-post="/admin/remove-whitelisted-ip" hx-target="closest tr" hx-swap="outerHTML" class="remove-whitelist-form"><input type="hidden" name="csrf" value="%s"><input type="hidden" name="ip" value="%s"><button type="submit" class="btn btn-outline btn-sm">Remove</button></form></td></tr>`,
+				whiteIP, csrf, whiteIP)
+		}
+		if len(s.Config.WhitelistedIPs) == 0 {
+			w.Write([]byte(`<tr id="no-whitelist-ips-row"><td colspan="2" style="text-align:center; padding:2rem">No IPs whitelisted.</td></tr>`))
+		}
+		return
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"ip": ip, "status": "added"})
 }
@@ -397,6 +486,12 @@ func (s *Server) handleRemoveWhitelistedIP(w http.ResponseWriter, r *http.Reques
 
 	if !found {
 		http.Error(w, "IP not found in whitelist", http.StatusNotFound)
+		return
+	}
+
+	if s.isHTMXRequest(r) {
+		w.Header().Set("Content-Type", "text/html")
+		w.Write([]byte(""))
 		return
 	}
 
