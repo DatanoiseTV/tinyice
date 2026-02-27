@@ -1718,63 +1718,77 @@
     </div>
 
     <!-- Edit AutoDJ Modal -->
-    <div id="edit-autodj-modal" class="modal">
-        <div class="modal-content">
-            <h2>Edit AutoDJ</h2>
+    <dialog id="edit-autodj-modal" class="modal">
+        <div class="modal-box bg-base-200">
+            <h3 class="font-bold text-lg mb-4">Edit AutoDJ</h3>
             <form action="/admin/autodj/update" method="POST" onsubmit="return submitForm(event, true)"
                 id="edit-autodj-form">
                 <input type="hidden" name="csrf" value="{{.CSRFToken}}">
                 <input type="hidden" name="old_mount" id="edit-old-mount">
-                <div class="form-group"><label>Instance Name</label><input type="text" name="name" id="edit-name"
-                        required></div>
-                <div class="form-group"><label>Mount Path</label><input type="text" name="mount" id="edit-mount"
-                        required></div>
-                <div class="form-group"><label>Music Directory</label><input type="text" name="music_dir"
-                        id="edit-music-dir" required></div>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
-                    <div class="form-group">
-                        <label>Format</label>
-                        <select name="format" id="edit-format">
+                <div class="form-control mb-3">
+                    <label class="label"><span class="label-text">Instance Name</span></label>
+                    <input type="text" name="name" id="edit-name" class="input input-bordered" required>
+                </div>
+                <div class="form-control mb-3">
+                    <label class="label"><span class="label-text">Mount Path</span></label>
+                    <input type="text" name="mount" id="edit-mount" class="input input-bordered" required>
+                </div>
+                <div class="form-control mb-3">
+                    <label class="label"><span class="label-text">Music Directory</span></label>
+                    <input type="text" name="music_dir" id="edit-music-dir" class="input input-bordered" required>
+                </div>
+                <div class="grid grid-cols-2 gap-2 mb-3">
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Format</span></label>
+                        <select name="format" id="edit-format" class="select select-bordered">
                             <option value="mp3">MP3</option>
                             <option value="opus">Opus</option>
                         </select>
                     </div>
-                    <div class="form-group"><label>Bitrate (kbps)</label><input type="number" name="bitrate"
-                            id="edit-bitrate" required></div>
-                </div>
-                <div class="form-group" style="display: flex; align-items: center; gap: 0.5rem;">
-                    <input type="checkbox" name="loop" id="edit-loop" style="width: auto;">
-                    <label for="edit-loop" style="margin-bottom: 0;">Loop Playlist</label>
-                </div>
-                <div class="form-group" style="display: flex; align-items: center; gap: 0.5rem;">
-                    <input type="checkbox" name="inject_metadata" id="edit-metadata" style="width: auto;">
-                    <label for="edit-metadata" style="margin-bottom: 0;">Inject Metadata (ICY)</label>
-                </div>
-                <div class="form-group" style="display: flex; align-items: center; gap: 0.5rem;">
-                    <input type="checkbox" name="visible" id="edit-visible" style="width: auto;">
-                    <label for="edit-visible" style="margin-bottom: 0;">Visible on Explore Page</label>
-                </div>
-                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; align-items: center;">
-                    <div class="form-group" style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0;">
-                        <input type="checkbox" name="mpd_enabled" id="edit-mpd" style="width: auto;">
-                        <label for="edit-mpd" style="margin-bottom: 0;">Expose MPD</label>
-                    </div>
-                    <div class="form-group" style="margin-bottom: 0;">
-                        <input type="text" name="mpd_port" id="edit-mpd-port" placeholder="Port (e.g. 6600)"
-                            style="padding: 0.4rem;" autocomplete="off">
-                    </div>
-                    <div class="form-group" style="margin-bottom: 0;">
-                        <input type="password" name="mpd_password" id="edit-mpd-password"
-                            placeholder="Password (Optional)" style="padding: 0.4rem;" autocomplete="new-password">
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Bitrate (kbps)</span></label>
+                        <input type="number" name="bitrate" id="edit-bitrate" class="input input-bordered" required>
                     </div>
                 </div>
-                <div style="display: flex; gap: 1rem; margin-top: 2rem;">
-                    <button type="submit" class="btn btn-primary" style="flex: 1;">Save Changes</button>
-                    <button type="button" class="btn btn-outline" style="flex: 1;"
-                        onclick="closeEditAutoDJ()">Cancel</button>
+                <div class="form-control mb-2">
+                    <label class="label cursor-pointer">
+                        <span class="label-text">Loop Playlist</span>
+                        <input type="checkbox" name="loop" id="edit-loop" class="checkbox checkbox-primary">
+                    </label>
+                </div>
+                <div class="form-control mb-2">
+                    <label class="label cursor-pointer">
+                        <span class="label-text">Inject Metadata (ICY)</span>
+                        <input type="checkbox" name="inject_metadata" id="edit-metadata" class="checkbox checkbox-primary">
+                    </label>
+                </div>
+                <div class="form-control mb-2">
+                    <label class="label cursor-pointer">
+                        <span class="label-text">Visible on Explore Page</span>
+                        <input type="checkbox" name="visible" id="edit-visible" class="checkbox checkbox-primary">
+                    </label>
+                </div>
+                <div class="grid grid-cols-3 gap-2 mb-4">
+                    <div class="form-control">
+                        <label class="label cursor-pointer justify-start gap-2">
+                            <input type="checkbox" name="mpd_enabled" id="edit-mpd" class="checkbox checkbox-primary">
+                            <span class="label-text">MPD</span>
+                        </label>
+                    </div>
+                    <div class="form-control">
+                        <input type="text" name="mpd_port" id="edit-mpd-port" placeholder="Port" class="input input-sm input-bordered">
+                    </div>
+                    <div class="form-control">
+                        <input type="password" name="mpd_password" id="edit-mpd-password" placeholder="Password" class="input input-sm input-bordered">
+                    </div>
+                </div>
+                <div class="modal-action">
+                    <button type="submit" class="btn btn-primary">Save Changes</button>
+                    <button type="button" class="btn" onclick="document.getElementById('edit-autodj-modal').close()">Cancel</button>
                 </div>
             </form>
         </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
     </div>
 
     {{template "js-templates.html" .}}
@@ -1931,11 +1945,11 @@
             document.getElementById('edit-mpd').checked = data.MPDEnabled;
             document.getElementById('edit-mpd-port').value = data.MPDPort;
             document.getElementById('edit-mpd-password').value = data.MPDPassword || '';
-            document.getElementById('edit-autodj-modal').style.display = 'block';
+            document.getElementById('edit-autodj-modal').showModal();
         }
 
         function closeEditAutoDJ() {
-            document.getElementById('edit-autodj-modal').style.display = 'none';
+            document.getElementById('edit-autodj-modal').close();
         }
 
         function loadLibrary(mount, container, subPath = '') {

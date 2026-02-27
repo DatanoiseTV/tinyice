@@ -1,75 +1,87 @@
 <template id="stream-row-template">
-    <tr>
-        <td><span class="mount-code row-mount"></span><br><span style="font-size:0.7rem;color:var(--text-dim)"
-                class="row-ip"></span></td>
-        <td><span class="song-title row-song"></span></td>
-        <td style="font-weight:700;color:var(--primary);" class="row-listeners"></td>
-        <td><span style="color:var(--success)" class="row-in"></span> / <span style="color:var(--primary)"
-                class="row-out"></span></td>
+    <tr class="hover">
+        <td>
+            <div class="font-mono text-sm row-mount"></div>
+            <div class="text-xs text-base-content/50 row-ip"></div>
+        </td>
+        <td><span class="row-song"></span></td>
+        <td class="font-bold text-primary row-listeners"></td>
+        <td>
+            <span class="text-success row-in"></span> / 
+            <span class="text-primary row-out"></span>
+        </td>
         <td><span class="row-health"></span></td>
-        <td style="font-family:monospace;" class="row-uptime"></span></td>
-        <td style="width:20%">
-            <div style="display:flex;gap:0.5rem;"><a href="" target="_blank"
-                    class="btn btn-outline btn-sm row-link">Listen</a><button type="button"
-                    class="btn btn-primary btn-sm row-share-btn">SHARE</button>
-                <form hx-post="/admin/kick" hx-target="closest tr" hx-swap="delete" hx-confirm="Kick this listener?"
-                    style="display:inline;" class="row-kick-form"><input type="hidden" name="csrf"
-                        value="{{.CSRFToken}}"><input type="hidden" name="mount" value=""><button type="submit"
-                        class="btn btn-danger btn-sm">KICK</button></form>
-            </div>
-        </td>
-    </tr>
-</template>
-<template id="relay-row-template">
-    <tr>
+        <td class="font-mono text-xs row-uptime"></td>
         <td>
-            <div class="status-pill row-relay-status">
-                <div class="dot"></div> <span class="row-relay-status-text"></span>
-            </div>
-        </td>
-        <td style="font-size:0.8rem;color:var(--text-dim)" class="row-relay-url"></td>
-        <td><span class="mount-code row-relay-mount"></span></td>
-        <td>
-            <div style="display:flex; gap:0.3rem"><button type="button"
-                    class="btn btn-outline btn-sm row-relay-edit-btn">EDIT</button>
-                <form hx-post="/admin/toggle-visible" hx-target="closest .btn" hx-swap="outerHTML"
-                    class="row-relay-visible-form"><input type="hidden" name="csrf" value="{{.CSRFToken}}"><input
-                        type="hidden" name="mount" value=""><button type="submit"
-                        class="btn btn-sm row-relay-visible-btn"></button></form>
-                <form hx-post="/admin/toggle-relay" hx-target="closest .btn" hx-swap="outerHTML"
-                    class="row-relay-toggle-form"><input type="hidden" name="csrf" value="{{.CSRFToken}}"><input
-                        type="hidden" name="mount" value=""><button type="submit"
-                        class="btn btn-sm row-relay-toggle-btn"></button></form>
-                <form hx-post="/admin/delete-relay" hx-target="closest tr" hx-swap="delete" hx-confirm="Stop this relay?"
-                    class="row-relay-delete-form"><input type="hidden" name="csrf" value="{{.CSRFToken}}"><input
-                        type="hidden" name="mount" value=""><button type="submit"
-                        class="btn btn-danger btn-sm">STOP</button></form>
-            </div>
-        </td>
-    </tr>
-</template>
-<template id="transcoder-row-template">
-    <tr>
-        <td>
-            <div class="status-pill row-tc-status">
-                <div class="dot"></div> <span class="row-tc-name"></span>
-            </div>
-        </td>
-        <td style="font-size:0.75rem; color:var(--text-dim)"><span class="row-tc-input"></span> &rarr; <span
-                class="row-tc-output"></span><br><strong class="row-tc-format"></strong></td>
-        <td style="font-size:0.75rem;"><span class="row-tc-uptime"></span><br><span class="row-tc-bytes"></span>
-        </td>
-        <td>
-            <div style="display:flex; gap:0.3rem">
-                <form hx-post="/admin/toggle-transcoder" hx-target="closest .btn" hx-swap="outerHTML">
-                    <input type="hidden" name="csrf" value="{{.CSRFToken}}"><input type="hidden" name="name"
-                        class="row-tc-hidden-name"><button type="submit"
-                        class="btn btn-sm row-tc-toggle-btn"></button>
+            <div class="join">
+                <a href="" target="_blank" class="btn btn-xs btn-outline join-item row-link">Listen</a>
+                <button type="button" class="btn btn-xs btn-primary join-item row-share-btn">Share</button>
+                <form hx-post="/admin/kick" hx-target="closest tr" hx-swap="delete" hx-confirm="Kick this listener?" class="join-item row-kick-form">
+                    <input type="hidden" name="csrf" value="{{.CSRFToken}}">
+                    <input type="hidden" name="mount" value="">
+                    <button type="submit" class="btn btn-xs btn-error">Kick</button>
                 </form>
-                <form hx-post="/admin/delete-transcoder" hx-target="closest tr" hx-swap="delete" hx-confirm="Delete this transcoder?"><input type="hidden"
-                    name="csrf" value="{{.CSRFToken}}"><input type="hidden" name="name"
-                    class="row-tc-hidden-name-del"><button type="submit"
-                    class="btn btn-danger btn-sm">DELETE</button></form>
+            </div>
+        </td>
+    </tr>
+</template>
+
+<template id="relay-row-template">
+    <tr class="hover">
+        <td>
+            <div class="badge badge-sm row-relay-status-text"></div>
+        </td>
+        <td class="text-sm text-base-content/60 row-relay-url"></td>
+        <td><code class="text-sm row-relay-mount"></code></td>
+        <td>
+            <div class="join">
+                <button type="button" class="btn btn-xs btn-outline row-relay-edit-btn">Edit</button>
+                <form hx-post="/admin/toggle-visible" hx-target="closest .btn" hx-swap="outerHTML" class="join-item row-relay-visible-form">
+                    <input type="hidden" name="csrf" value="{{.CSRFToken}}">
+                    <input type="hidden" name="mount" value="">
+                    <button type="submit" class="btn btn-xs btn-sm row-relay-visible-btn"></button>
+                </form>
+                <form hx-post="/admin/toggle-relay" hx-target="closest .btn" hx-swap="outerHTML" class="join-item row-relay-toggle-form">
+                    <input type="hidden" name="csrf" value="{{.CSRFToken}}">
+                    <input type="hidden" name="mount" value="">
+                    <button type="submit" class="btn btn-xs btn-sm row-relay-toggle-btn"></button>
+                </form>
+                <form hx-post="/admin/delete-relay" hx-target="closest tr" hx-swap="delete" hx-confirm="Stop this relay?" class="join-item row-relay-delete-form">
+                    <input type="hidden" name="csrf" value="{{.CSRFToken}}">
+                    <input type="hidden" name="mount" value="">
+                    <button type="submit" class="btn btn-xs btn-error">Stop</button>
+                </form>
+            </div>
+        </td>
+    </tr>
+</template>
+
+<template id="transcoder-row-template">
+    <tr class="hover">
+        <td>
+            <div class="badge badge-sm row-tc-status"></div>
+            <span class="text-xs row-tc-name"></span>
+        </td>
+        <td class="text-xs text-base-content/60">
+            <span class="row-tc-input"></span> &rarr; <span class="row-tc-output"></span>
+            <br><strong class="row-tc-format"></strong>
+        </td>
+        <td class="text-xs">
+            <span class="row-tc-uptime"></span><br>
+            <span class="row-tc-bytes"></span>
+        </td>
+        <td>
+            <div class="join">
+                <form hx-post="/admin/toggle-transcoder" hx-target="closest .btn" hx-swap="outerHTML" class="join-item">
+                    <input type="hidden" name="csrf" value="{{.CSRFToken}}">
+                    <input type="hidden" name="name" class="row-tc-hidden-name">
+                    <button type="submit" class="btn btn-xs btn-sm row-tc-toggle-btn"></button>
+                </form>
+                <form hx-post="/admin/delete-transcoder" hx-target="closest tr" hx-swap="delete" hx-confirm="Delete this transcoder?" class="join-item">
+                    <input type="hidden" name="csrf" value="{{.CSRFToken}}">
+                    <input type="hidden" name="name" class="row-tc-hidden-name-del">
+                    <button type="submit" class="btn btn-xs btn-error">Del</button>
+                </form>
             </div>
         </td>
     </tr>
