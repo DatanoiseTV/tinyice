@@ -238,6 +238,11 @@ func (s *Server) handleKick(w http.ResponseWriter, r *http.Request) {
 	if ok && s.hasAccess(user, mount) {
 		s.Relay.RemoveStream(mount)
 	}
+	if s.isHTMXRequest(r) {
+		w.Header().Set("Content-Type", "text/html")
+		w.Write([]byte(""))
+		return
+	}
 	http.Redirect(w, r, "/admin", http.StatusSeeOther)
 }
 

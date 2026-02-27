@@ -68,6 +68,22 @@ func (s *Server) handleToggleRelay(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	if s.isHTMXRequest(r) {
+		w.Header().Set("Content-Type", "text/html")
+		for _, rc := range s.Config.Relays {
+			if rc.Mount == mount {
+				btnClass := "btn-warning"
+				btnText := "STOP"
+				if !rc.Enabled {
+					btnClass = "btn-primary"
+					btnText = "START"
+				}
+				fmt.Fprintf(w, `<button type="submit" class="btn %s btn-sm" hx-post="/admin/toggle-relay" hx-vals='{"mount": "%s"}' hx-target="closest .btn" hx-swap="outerHTML">%s</button>`, btnClass, mount, btnText)
+				break
+			}
+		}
+		return
+	}
 	http.Redirect(w, r, "/admin", http.StatusSeeOther)
 }
 
@@ -86,6 +102,11 @@ func (s *Server) handleDeleteRelay(w http.ResponseWriter, r *http.Request) {
 				break
 			}
 		}
+	}
+	if s.isHTMXRequest(r) {
+		w.Header().Set("Content-Type", "text/html")
+		w.Write([]byte(""))
+		return
 	}
 	http.Redirect(w, r, "/admin", http.StatusSeeOther)
 }
@@ -158,6 +179,22 @@ func (s *Server) handleToggleTranscoder(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 	s.Config.SaveConfig()
+	if s.isHTMXRequest(r) {
+		w.Header().Set("Content-Type", "text/html")
+		for _, tc := range s.Config.Transcoders {
+			if tc.Name == name {
+				btnClass := "btn-warning"
+				btnText := "STOP"
+				if !tc.Enabled {
+					btnClass = "btn-primary"
+					btnText = "START"
+				}
+				fmt.Fprintf(w, `<button type="submit" class="btn %s btn-sm" hx-post="/admin/toggle-transcoder" hx-vals='{"name": "%s"}' hx-target="closest .btn" hx-swap="outerHTML">%s</button>`, btnClass, name, btnText)
+				break
+			}
+		}
+		return
+	}
 	http.Redirect(w, r, "/admin#tab-transcoding", http.StatusSeeOther)
 }
 
@@ -177,6 +214,11 @@ func (s *Server) handleDeleteTranscoder(w http.ResponseWriter, r *http.Request) 
 	}
 	s.Config.Transcoders = newTCs
 	s.Config.SaveConfig()
+	if s.isHTMXRequest(r) {
+		w.Header().Set("Content-Type", "text/html")
+		w.Write([]byte(""))
+		return
+	}
 	http.Redirect(w, r, "/admin#tab-transcoding", http.StatusSeeOther)
 }
 

@@ -81,7 +81,7 @@ type Server struct {
 
 func NewServer(cfg *config.Config, authLog *zap.SugaredLogger, version, commit string) *Server {
 	tmpl := template.New("base")
-	tmpl, err := tmpl.ParseFS(templateFS, "templates/*.html")
+	tmpl, err := tmpl.ParseFS(templateFS, "templates/*.html", "templates/partials/*.html")
 	if err != nil {
 		logger.L.Fatalf("Error loading embedded templates: %v", err)
 	}
