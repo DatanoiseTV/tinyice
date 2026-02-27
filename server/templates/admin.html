@@ -1,14 +1,20 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>TinyIce Admin</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {{.ThemeJS}}
+    </script>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.7.2/dist/full.min.css" rel="stylesheet" type="text/css" />
     <script src="/assets/js/htmx.min.js"></script>
     <script src="/assets/js/lucide.min.js"></script>
     <script src="/assets/js/Sortable.min.js"></script>
     <style>
+        :root { {{.Theme}} }
         .htmx-indicator {
             opacity: 0;
             transition: opacity 200ms ease-in;

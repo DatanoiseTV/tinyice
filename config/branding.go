@@ -23,3 +23,50 @@ const (
 	BrandName = "TinyIce"
 	BrandURL  = "https://github.com/DatanoiseTV/tinyice"
 )
+
+func ThemeJSConfig() string {
+	return `{
+		theme: {
+			extend: {
+				colors: {
+					primary: '` + ThemePrimary + `',
+					secondary: '` + ThemeSecondary + `',
+					accent: '` + ThemeSuccess + `',
+					neutral: '` + ThemeSurface + `',
+					'base-100': '` + ThemeBackground + `',
+					'base-200': '` + ThemeBackgroundAlt + `',
+					'base-300': '` + ThemeSurface + `',
+					info: '` + ThemePrimary + `',
+					success: '` + ThemeSuccess + `',
+					warning: '` + ThemeWarning + `',
+					error: '` + ThemeDanger + `',
+				},
+				fontFamily: {
+					sans: '` + ThemeFontFamily + `',
+					mono: '` + ThemeFontMono + `',
+				}
+			}
+		},
+		plugins: [daisyui],
+		daisyui: {
+			themes: ["tinyice"],
+			darkTheme: "tinyice",
+		}
+	}`
+}
+
+func CSSVariables() string {
+	return `--primary: ` + ThemePrimary + `;` +
+		`--primary-glow: ` + ThemePrimaryGlow + `;` +
+		`--secondary: ` + ThemeSecondary + `;` +
+		`--success: ` + ThemeSuccess + `;` +
+		`--warning: ` + ThemeWarning + `;` +
+		`--danger: ` + ThemeDanger + `;` +
+		`--bg: ` + ThemeBackground + `;` +
+		`--bg-alt: ` + ThemeBackgroundAlt + `;` +
+		`--surface: ` + ThemeSurface + `;` +
+		`--border: ` + ThemeBorder + `;` +
+		`--text: ` + ThemeText + `;` +
+		`--text-dim: ` + ThemeTextDim + `;` +
+		`--radius: ` + ThemeRadius + `;`
+}

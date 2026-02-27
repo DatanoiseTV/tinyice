@@ -70,6 +70,10 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 		"Streamers":      s.StreamerM.GetStreamers(),
 		"Version":        s.Version,
 		"Commit":         s.Commit,
+		"BrandName":      config.BrandName,
+		"BrandURL":       config.BrandURL,
+		"Theme":          config.CSSVariables(),
+		"ThemeJS":        config.ThemeJSConfig(),
 	}
 	if err := s.tmpl.ExecuteTemplate(w, "admin.html", data); err != nil {
 		if !strings.Contains(err.Error(), "broken pipe") {
