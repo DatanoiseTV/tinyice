@@ -104,7 +104,7 @@ Traditional streaming servers can be complex to configure and resource-heavy. Ti
 
 ### Authentication
 -   **Username/Password**: Standard login with bcrypt-hashed passwords.
--   **Passkeys (WebAuthn)**: Passwordless authentication with hardware security keys or biometrics.
+-   **Passkeys (WebAuthn)**: Passwordless authentication with hardware security keys or biometrics. **Note:** Passkeys require a hostname (e.g. `localhost`), not an IP address (`127.0.0.1`), due to WebAuthn spec requirements.
 -   **OIDC/OAuth2**: External identity providers (GitHub, Google, etc.) with pending user approval workflow.
 -   **API Tokens**: Bearer tokens for programmatic access with expiry and usage tracking.
 
