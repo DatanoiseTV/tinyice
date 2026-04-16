@@ -1,0 +1,12 @@
+.git
+.github
+.vscode
+.idea
+node_modules
+server/frontend/node_modules
+server/frontend/dist
+dist
+tinyice
+*.log
+*.md
+!README.md

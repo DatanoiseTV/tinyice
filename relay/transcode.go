@@ -103,7 +103,7 @@ func (tm *TranscoderManager) runTranscoder(ctx context.Context, inst *Transcoder
 		case <-ctx.Done():
 			return
 		default:
-			tm.performTranscode(ctx, inst)
+			tm.safePerformTranscode(ctx, inst)
 			// Wait before retry if input stream wasn't found
 			select {
 			case <-ctx.Done():
@@ -112,6 +112,24 @@ func (tm *TranscoderManager) runTranscoder(ctx context.Context, inst *Transcoder
 			}
 		}
 	}
+}
+
+// safePerformTranscode wraps performTranscode with a panic recovery. Some
+// third-party decoders (e.g. go-mp3) can panic on malformed or non-MP3 input
+// instead of returning an error. Recovering here prevents a bad input stream
+// from taking down the whole server and lets the retry loop try again.
+func (tm *TranscoderManager) safePerformTranscode(ctx context.Context, inst *TranscoderInstance) {
+	defer func() {
+		if r := recover(); r != nil {
+			logger.L.Errorw("Transcoder: recovered from panic",
+				"name", inst.Config.Name,
+				"input", inst.Config.InputMount,
+				"output", inst.Config.OutputMount,
+				"panic", fmt.Sprintf("%v", r),
+			)
+		}
+	}()
+	tm.performTranscode(ctx, inst)
 }
 
 func (tm *TranscoderManager) performTranscode(ctx context.Context, inst *TranscoderInstance) {

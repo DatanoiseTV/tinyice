@@ -413,8 +413,12 @@ func (s *Server) apiCreateAutoDJ(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
-	if body.Name == "" || body.Mount == "" || body.MusicDir == "" {
-		jsonError(w, "Name, mount, and music_dir are required", http.StatusBadRequest)
+	if body.Name == "" || body.Mount == "" {
+		jsonError(w, "Name and mount are required", http.StatusBadRequest)
+		return
+	}
+	if body.MusicDir == "" && body.SongCommand == "" {
+		jsonError(w, "Either music_dir or song_command is required", http.StatusBadRequest)
 		return
 	}
 	if body.Mount[0] != '/' {
@@ -427,7 +431,10 @@ func (s *Server) apiCreateAutoDJ(w http.ResponseWriter, r *http.Request) {
 		body.Bitrate = 128
 	}
 
-	absMusicDir, _ := filepath.Abs(body.MusicDir)
+	absMusicDir := ""
+	if body.MusicDir != "" {
+		absMusicDir, _ = filepath.Abs(body.MusicDir)
+	}
 
 	adj := &config.AutoDJConfig{
 		Name:           body.Name,
@@ -459,7 +466,9 @@ func (s *Server) apiCreateAutoDJ(w http.ResponseWriter, r *http.Request) {
 			st.SetVisible(adj.Visible)
 		}
 	}
-	streamer.ScanMusicDir()
+	if adj.MusicDir != "" {
+		streamer.ScanMusicDir()
+	}
 	streamer.Play()
 	jsonResponse(w, map[string]string{"status": "created", "mount": adj.Mount})
 	s.Audit(r, "autodj_created", "autodj", body.Mount, body.Name)
@@ -487,7 +496,7 @@ func (s *Server) apiDeleteAutoDJ(w http.ResponseWriter, r *http.Request) {
 		if adj.Mount != mount {
 			newADJs = append(newADJs, adj)
 		} else {
-			s.StreamerM.StopStreamer(mount)
+			s.StreamerM.DeleteStreamer(mount)
 			found = true
 		}
 	}

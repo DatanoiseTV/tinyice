@@ -569,8 +569,13 @@ func (s *Server) handleAddAutoDJ(w http.ResponseWriter, r *http.Request) {
 	mpdPassword := r.FormValue("mpd_password")
 	visible := r.FormValue("visible") == "on"
 
-	if name == "" || mount == "" || musicDir == "" {
-		http.Error(w, "Name, mount, and music directory are required", http.StatusBadRequest)
+	songCommand := r.FormValue("song_command")
+	if name == "" || mount == "" {
+		http.Error(w, "Name and mount are required", http.StatusBadRequest)
+		return
+	}
+	if musicDir == "" && songCommand == "" {
+		http.Error(w, "Either music directory or song command is required", http.StatusBadRequest)
 		return
 	}
 
@@ -582,7 +587,10 @@ func (s *Server) handleAddAutoDJ(w http.ResponseWriter, r *http.Request) {
 		format = "mp3"
 	}
 
-	absMusicDir, _ := filepath.Abs(musicDir)
+	absMusicDir := ""
+	if musicDir != "" {
+		absMusicDir, _ = filepath.Abs(musicDir)
+	}
 
 	if mount[0] != '/' {
 		mount = "/" + mount
@@ -601,6 +609,7 @@ func (s *Server) handleAddAutoDJ(w http.ResponseWriter, r *http.Request) {
 		MPDPort:        mpdPort,
 		MPDPassword:    mpdPassword,
 		Visible:        visible,
+		SongCommand:    songCommand,
 	}
 
 	s.Config.AutoDJs = append(s.Config.AutoDJs, adj)
@@ -613,7 +622,9 @@ func (s *Server) handleAddAutoDJ(w http.ResponseWriter, r *http.Request) {
 				st.SetVisible(adj.Visible)
 			}
 		}
-		streamer.ScanMusicDir()
+		if adj.MusicDir != "" {
+			streamer.ScanMusicDir()
+		}
 		streamer.Play()
 	}
 
@@ -635,7 +646,7 @@ func (s *Server) handleDeleteAutoDJ(w http.ResponseWriter, r *http.Request) {
 		if adj.Mount != mount {
 			newADJs = append(newADJs, adj)
 		} else {
-			s.StreamerM.StopStreamer(mount)
+			s.StreamerM.DeleteStreamer(mount)
 		}
 	}
 	s.Config.AutoDJs = newADJs
@@ -755,8 +766,13 @@ func (s *Server) handleUpdateAutoDJ(w http.ResponseWriter, r *http.Request) {
 	mpdPassword := r.FormValue("mpd_password")
 	visible := r.FormValue("visible") == "on"
 
-	if name == "" || newMount == "" || musicDir == "" {
-		http.Error(w, "Name, mount, and music directory are required", http.StatusBadRequest)
+	songCommand := r.FormValue("song_command")
+	if name == "" || newMount == "" {
+		http.Error(w, "Name and mount are required", http.StatusBadRequest)
+		return
+	}
+	if musicDir == "" && songCommand == "" {
+		http.Error(w, "Either music directory or song command is required", http.StatusBadRequest)
 		return
 	}
 
@@ -767,7 +783,10 @@ func (s *Server) handleUpdateAutoDJ(w http.ResponseWriter, r *http.Request) {
 	bitrate := 128
 	fmt.Sscanf(bitrateStr, "%d", &bitrate)
 
-	absMusicDir, _ := filepath.Abs(musicDir)
+	absMusicDir := ""
+	if musicDir != "" {
+		absMusicDir, _ = filepath.Abs(musicDir)
+	}
 
 	for _, adj := range s.Config.AutoDJs {
 		if adj.Mount == oldMount {
@@ -782,8 +801,9 @@ func (s *Server) handleUpdateAutoDJ(w http.ResponseWriter, r *http.Request) {
 			adj.MPDPort = mpdPort
 			adj.MPDPassword = mpdPassword
 			adj.Visible = visible
+			adj.SongCommand = songCommand
 
-			s.StreamerM.StopStreamer(oldMount)
+			s.StreamerM.DeleteStreamer(oldMount)
 			streamer, err := s.StreamerM.StartStreamer(adj.Name, adj.Mount, absMusicDir, adj.Loop, adj.Format, adj.Bitrate, adj.InjectMetadata, adj.Playlist, adj.MPDEnabled, adj.MPDPort, adj.MPDPassword, adj.Visible, adj.LastPlaylist, adj.SongCommand, adj.SongCommandTimeout)
 			if err == nil {
 				if adj.Enabled {

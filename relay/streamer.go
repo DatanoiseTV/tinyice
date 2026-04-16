@@ -678,6 +678,23 @@ func (sm *StreamerManager) StopStreamer(mount string) {
 	}
 }
 
+// DeleteStreamer stops the streamer and removes it from the manager entirely.
+// Use this when the underlying AutoDJ config is being deleted (as opposed to
+// StopStreamer which keeps the instance around so the UI can restart it).
+func (sm *StreamerManager) DeleteStreamer(mount string) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	if s, ok := sm.instances[mount]; ok {
+		if s.MPDServer != nil {
+			logger.L.Debugf("AutoDJ %s: Stopping MPD server", s.Name)
+			s.MPDServer.Stop()
+		}
+		s.Stop()
+		delete(sm.instances, mount)
+	}
+}
+
 func (sm *StreamerManager) GetStreamers() []*Streamer {
 	sm.mu.RLock()
 	defer sm.mu.RUnlock()
