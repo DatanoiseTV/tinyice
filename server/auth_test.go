@@ -4,7 +4,12 @@ import (
 	"testing"
 
 	"github.com/DatanoiseTV/tinyice/config"
+	"github.com/DatanoiseTV/tinyice/logger"
 )
+
+func init() {
+	logger.Init("error", false, "")
+}
 
 func TestIPWhitelistAndBanning(t *testing.T) {
 	cfg := &config.Config{
