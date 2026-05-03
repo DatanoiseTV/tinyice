@@ -1,0 +1,40 @@
+version: 2
+updates:
+  - package-ecosystem: "gomod"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "saturday"
+    open-pull-requests-limit: 5
+    groups:
+      patch-and-minor:
+        update-types: ["patch", "minor"]
+    labels: ["dependencies"]
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "saturday"
+    open-pull-requests-limit: 3
+    labels: ["dependencies"]
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "saturday"
+    open-pull-requests-limit: 3
+    groups:
+      actions:
+        patterns: ["*"]
+    labels: ["dependencies"]
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
