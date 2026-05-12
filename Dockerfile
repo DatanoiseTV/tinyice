@@ -20,7 +20,7 @@ RUN CGO_ENABLED=0 go build \
     -ldflags="-s -w -X main.Version=${VERSION} -X main.Commit=${COMMIT}" \
     -o /out/tinyice .
 
-FROM alpine:3.20
+FROM alpine:3.23
 RUN apk add --no-cache ca-certificates tzdata && \
     adduser -D -u 10001 tinyice && \
     mkdir -p /data && chown tinyice:tinyice /data
