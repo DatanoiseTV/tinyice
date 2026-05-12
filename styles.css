@@ -143,7 +143,6 @@ code, pre { font-family: var(--font-mono); }
   margin-bottom: 28px;
 }
 .eyebrow .sep { color: var(--fg-very-dim); margin: 0 6px; }
-.eyebrow [data-version-target] { color: var(--accent); }
 
 .hero-title {
   font-family: var(--font-sans);
@@ -323,8 +322,9 @@ code, pre { font-family: var(--font-mono); }
   font-weight: 500;
   letter-spacing: 0.02em;
   vertical-align: 0.15em;
-  margin-left: 8px;
+  margin-left: 10px;
 }
+.section-h [data-version-target]:empty { margin-left: 0; }
 .section-sub {
   font-size: 15px;
   color: var(--fg-muted);
