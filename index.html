@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+
+<title>TinyIce &middot; self-hosted streaming server for radio and live video</title>
+<meta name="description" content="An open-source streaming server. Run internet radio with AutoDJ, or live video over RTMP, SRT, or WebRTC, from a single Go binary. Built-in player, admin UI, and automatic HTTPS." />
+<meta name="keywords" content="streaming server, internet radio server, self-hosted radio, live video streaming, icecast alternative, rtmp server, srt server, webrtc streaming, hls server, autodj, self-hosted streaming" />
+<meta name="author" content="DatanoiseTV" />
+<meta name="theme-color" content="#0a0a0a" />
+
+<link rel="canonical" href="https://datanoisetv.github.io/tinyice/" />
+<link rel="icon" href="assets/logo.png" />
+
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="TinyIce" />
+<meta property="og:title" content="TinyIce &mdash; self-hosted streaming server for radio and live video" />
+<meta property="og:description" content="An open-source streaming server. Run internet radio with AutoDJ, or live video over RTMP, SRT, or WebRTC, from a single Go binary." />
+<meta property="og:url" content="https://datanoisetv.github.io/tinyice/" />
+<meta property="og:image" content="https://datanoisetv.github.io/tinyice/assets/screenshots/admin-dashboard.png" />
+<meta property="og:image:width" content="1440" />
+<meta property="og:image:height" content="900" />
+
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="TinyIce &mdash; self-hosted streaming server for radio and live video" />
+<meta name="twitter:description" content="Run internet radio with AutoDJ, or live video over RTMP, SRT, or WebRTC, from a single Go binary." />
+<meta name="twitter:image" content="https://datanoisetv.github.io/tinyice/assets/screenshots/admin-dashboard.png" />
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="preload" as="image" href="assets/screenshots/admin-dashboard.png" />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" />
+<link rel="stylesheet" href="styles.css" />
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "TinyIce",
+  "description": "An open-source streaming server for internet radio and live video, distributed as a single Go binary. Icecast-compatible, with RTMP, SRT and WebRTC ingest, HLS audio + video output, a built-in AutoDJ, and an admin UI.",
+  "applicationCategory": "ServerApplication",
+  "applicationSubCategory": "Streaming Server",
+  "operatingSystem": "Linux, macOS, Windows, FreeBSD",
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+  "license": "https://www.apache.org/licenses/LICENSE-2.0",
+  "downloadUrl": "https://github.com/DatanoiseTV/tinyice/releases/latest",
+  "codeRepository": "https://github.com/DatanoiseTV/tinyice",
+  "programmingLanguage": "Go",
+  "author": {
+    "@type": "Person",
+    "name": "DatanoiseTV",
+    "url": "https://github.com/DatanoiseTV"
+  }
+}
+</script>
+</head>
+<body>
+
+<header class="nav" role="banner">
+  <a class="brand" href="#" aria-label="TinyIce">
+    <span class="brand-tile" aria-hidden="true">Ti</span>
+    <span class="brand-name">TINYICE</span>
+  </a>
+  <nav class="nav-links" aria-label="Primary">
+    <a href="#how">How it works</a>
+    <a href="#download">Download</a>
+    <a href="https://github.com/DatanoiseTV/tinyice/blob/main/README.md">Docs</a>
+    <a href="https://github.com/DatanoiseTV/tinyice" class="nav-accent">GitHub &rarr;</a>
+  </nav>
+</header>
+
+<main>
+
+  <section class="hero">
+    <div class="hero-inner">
+      <div class="eyebrow">
+        Streaming server <span class="sep">&middot;</span>
+        Open source <span class="sep">&middot;</span>
+        Apache 2.0 <span class="sep">&middot;</span>
+        <span data-version-target>v2.6.0</span>
+      </div>
+
+      <h1 class="hero-title">
+        Run a radio station, or a live video&nbsp;stream,
+        <span class="accent">in 30&nbsp;seconds.</span>
+      </h1>
+
+      <p class="hero-lead">
+        TinyIce is a self-hosted streaming server distributed as a
+        single Go binary. Point your existing broadcast software at it
+        &mdash; OBS, BUTT, Mixxx, FFmpeg, a browser &mdash; and your
+        listeners can tune in on any device. No FFmpeg, no Docker, no
+        nginx required.
+      </p>
+
+      <div class="cta-row">
+        <a class="btn btn-primary" href="#download">
+          Download for <span id="cta-os">Linux</span>
+          <span class="btn-arrow" aria-hidden="true">&rarr;</span>
+        </a>
+        <a class="btn btn-secondary" href="https://github.com/DatanoiseTV/tinyice">
+          View on GitHub
+        </a>
+      </div>
+
+      <p class="hero-fineprint">
+        Free and open source under the Apache 2.0 license &middot;
+        Linux, macOS, Windows, FreeBSD &middot; ~27&nbsp;MB
+      </p>
+    </div>
+
+    <figure class="hero-shot" aria-labelledby="hero-shot-cap">
+      <a href="assets/screenshots/admin-dashboard.png" aria-label="View full-size dashboard screenshot">
+        <img src="assets/screenshots/admin-dashboard.png"
+             alt="TinyIce admin dashboard showing live listener traffic, active streams, and bandwidth usage." />
+      </a>
+      <figcaption id="hero-shot-cap" class="visually-hidden">
+        TinyIce admin dashboard, showing live listener traffic, active streams, and bandwidth.
+      </figcaption>
+    </figure>
+  </section>
+
+  <section class="how" id="how">
+
+    <article class="block">
+      <div class="block-text">
+        <div class="block-eyebrow">01 &middot; Ingest</div>
+        <h2>Broadcast from what you already use.</h2>
+        <p>
+          TinyIce speaks the protocols your tools speak. BUTT, Mixxx
+          and LadioCast connect over Icecast 2. OBS publishes over
+          RTMP or SRT. A browser tab can broadcast directly via
+          WebRTC. Upstream Icecast streams can be pulled in as relays.
+        </p>
+        <p class="block-supports">
+          Icecast 2 &middot; RTMP (H.264 + AAC/MP3) &middot; SRT &middot; WebRTC &middot; Relay
+        </p>
+      </div>
+      <figure class="block-shot">
+        <a href="assets/screenshots/developers.png">
+          <img loading="lazy" src="assets/screenshots/developers.png"
+               alt="Developer portal listing supported ingest protocols and example commands." />
+        </a>
+      </figure>
+    </article>
+
+    <article class="block block-reverse">
+      <div class="block-text">
+        <div class="block-eyebrow">02 &middot; Playback</div>
+        <h2>An embedded player for every listener.</h2>
+        <p>
+          Every server ships with a responsive web player that
+          auto-switches to a 16:9 layout when the stream carries
+          video. iOS gets native HLS, modern browsers get WebRTC for
+          sub-second latency, and the whole thing drops into another
+          site as a single <code>&lt;iframe&gt;</code>.
+        </p>
+        <p class="block-supports">
+          HLS audio + video &middot; WHEP &middot; DVR seek &middot; Embeddable iframe
+        </p>
+      </div>
+      <figure class="block-shot">
+        <a href="assets/screenshots/landing.png">
+          <img loading="lazy" src="assets/screenshots/landing.png"
+               alt="Public TinyIce landing page with the embedded web player." />
+        </a>
+      </figure>
+    </article>
+
+    <article class="block">
+      <div class="block-text">
+        <div class="block-eyebrow">03 &middot; Operations</div>
+        <h2>Set it. Forget it.</h2>
+        <p>
+          A built-in AutoDJ keeps a station on the air when nobody is
+          live. Webhooks push now-playing to Discord, Slack, or
+          TuneIn. Prometheus metrics and structured logs slot into
+          existing observability stacks, and Let&rsquo;s Encrypt
+          certificates renew themselves.
+        </p>
+        <p class="block-supports">
+          AutoDJ &middot; Webhooks &middot; Prometheus &middot; Auto-HTTPS
+        </p>
+      </div>
+      <figure class="block-shot">
+        <a href="assets/screenshots/admin-autodj.png">
+          <img loading="lazy" src="assets/screenshots/admin-autodj.png"
+               alt="AutoDJ admin view with playlists, schedule, and queue." />
+        </a>
+      </figure>
+    </article>
+
+  </section>
+
+  <section class="download" id="download" aria-labelledby="download-h">
+    <div class="download-inner">
+      <h2 id="download-h" class="section-h">Download <span data-version-target>v2.6.0</span></h2>
+      <p class="section-sub">
+        Pre-built binaries for every supported platform &middot;
+        <a href="https://github.com/DatanoiseTV/tinyice/releases/latest">all release assets &rarr;</a>
+      </p>
+
+      <div class="dl-box">
+        <div class="dl-head">
+          <div class="dl-os-chips" role="tablist" aria-label="Pick your platform">
+            <button class="chip" data-os="linux"   data-default-arch="amd64">Linux</button>
+            <button class="chip" data-os="macos"   data-default-arch="arm64">macOS</button>
+            <button class="chip" data-os="windows" data-default-arch="amd64">Windows</button>
+            <button class="chip" data-os="freebsd" data-default-arch="amd64">FreeBSD</button>
+            <button class="chip" data-os="docker">Docker</button>
+            <button class="chip" data-os="source">From source</button>
+          </div>
+          <div class="dl-arch" aria-label="Architecture">
+            <button class="arch" data-arch="amd64">amd64</button>
+            <button class="arch" data-arch="arm64">arm64</button>
+          </div>
+        </div>
+
+        <div class="dl-code">
+          <pre data-os="linux" data-arch="amd64"><code>curl -L -o tinyice \
+  https://github.com/DatanoiseTV/tinyice/releases/latest/download/tinyice-linux-amd64
+chmod +x tinyice
+./tinyice</code></pre>
+          <pre data-os="linux" data-arch="arm64" hidden><code>curl -L -o tinyice \
+  https://github.com/DatanoiseTV/tinyice/releases/latest/download/tinyice-linux-arm64
+chmod +x tinyice
+./tinyice</code></pre>
+
+          <pre data-os="macos" data-arch="arm64" hidden><code>curl -L -o tinyice \
+  https://github.com/DatanoiseTV/tinyice/releases/latest/download/tinyice-darwin-arm64
+chmod +x tinyice
+xattr -d com.apple.quarantine tinyice 2>/dev/null || true
+./tinyice</code></pre>
+          <pre data-os="macos" data-arch="amd64" hidden><code>curl -L -o tinyice \
+  https://github.com/DatanoiseTV/tinyice/releases/latest/download/tinyice-darwin-amd64
+chmod +x tinyice
+xattr -d com.apple.quarantine tinyice 2>/dev/null || true
+./tinyice</code></pre>
+
+          <pre data-os="windows" data-arch="amd64" hidden><code>Invoke-WebRequest `
+  -Uri "https://github.com/DatanoiseTV/tinyice/releases/latest/download/tinyice-windows-amd64.exe" `
+  -OutFile tinyice.exe
+.\tinyice.exe</code></pre>
+
+          <pre data-os="freebsd" data-arch="amd64" hidden><code>fetch -o tinyice \
+  https://github.com/DatanoiseTV/tinyice/releases/latest/download/tinyice-freebsd-amd64
+chmod +x tinyice
+./tinyice</code></pre>
+          <pre data-os="freebsd" data-arch="arm64" hidden><code>fetch -o tinyice \
+  https://github.com/DatanoiseTV/tinyice/releases/latest/download/tinyice-freebsd-arm64
+chmod +x tinyice
+./tinyice</code></pre>
+
+          <pre data-os="docker" hidden><code>docker run --rm -p 8000:8000 -p 1935:1935 \
+  -v tinyice-data:/data \
+  ghcr.io/datanoisetv/tinyice:latest</code></pre>
+
+          <pre data-os="source" hidden><code>git clone https://github.com/DatanoiseTV/tinyice.git
+cd tinyice
+make build
+./tinyice</code></pre>
+
+          <button class="copy" type="button" aria-label="Copy install command">Copy</button>
+        </div>
+
+        <p class="dl-note" id="dl-note">
+          First run writes <code>tinyice.json</code> and prints a
+          generated admin password. Open
+          <code>http://localhost:8000</code>.
+        </p>
+      </div>
+
+      <p class="dl-verify">
+        Verify downloads against
+        <a href="https://github.com/DatanoiseTV/tinyice/releases/latest/download/checksums.txt">SHA-256 checksums</a>.
+      </p>
+    </div>
+  </section>
+
+  <section class="docs-row" aria-label="Further reading">
+    <div class="docs-inner">
+      <a href="https://github.com/DatanoiseTV/tinyice/blob/main/README.md">Quick start</a>
+      <a href="https://github.com/DatanoiseTV/tinyice/blob/main/API.md">HTTP API</a>
+      <a href="https://github.com/DatanoiseTV/tinyice/blob/main/ARCHITECTURE.md">Architecture</a>
+      <a href="https://github.com/DatanoiseTV/tinyice/blob/main/PERFORMANCE.md">Performance</a>
+      <a href="https://github.com/DatanoiseTV/tinyice/blob/main/SECURITY.md">Security</a>
+      <a href="https://github.com/DatanoiseTV/tinyice/blob/main/CHANGELOG.md">Changelog</a>
+    </div>
+  </section>
+
+</main>
+
+<footer class="site-footer">
+  <div class="footer-inner">
+    <div class="footer-brand">
+      <span class="brand-tile" aria-hidden="true">Ti</span>
+      <div>
+        <div class="footer-name">TinyIce</div>
+        <div class="footer-tag">Self-hosted streaming server</div>
+      </div>
+    </div>
+    <div class="footer-meta">
+      <a href="https://github.com/DatanoiseTV/tinyice">GitHub</a>
+      <a href="https://github.com/DatanoiseTV/tinyice/issues">Issues</a>
+      <a href="https://github.com/DatanoiseTV/tinyice/blob/main/LICENSE">License</a>
+      <a href="https://github.com/DatanoiseTV/tinyice/blob/main/SECURITY.md">Security</a>
+    </div>
+  </div>
+  <div class="footer-fineprint">
+    <span>Apache License 2.0</span>
+    <span class="dot">&middot;</span>
+    <span>&copy; <a href="https://github.com/DatanoiseTV">DatanoiseTV</a></span>
+  </div>
+</footer>
+
+<script src="app.js" defer></script>
+</body>
+</html>
