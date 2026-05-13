@@ -6,12 +6,13 @@
   const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
   const OS_LABEL = {
-    linux:   'Linux',
-    macos:   'macOS',
-    windows: 'Windows',
-    freebsd: 'FreeBSD',
-    docker:  'Docker',
-    source:  'source'
+    linux:    'Linux',
+    macos:    'macOS',
+    windows:  'Windows',
+    freebsd:  'FreeBSD',
+    homebrew: 'Homebrew',
+    docker:   'Docker',
+    source:   'source'
   };
 
   /* ---------- OS detection ---------- */
@@ -83,6 +84,8 @@
         return 'Binaries are not codesigned &mdash; <code>xattr -d com.apple.quarantine</code> clears Gatekeeper. First run writes <code>tinyice.json</code> and prints a generated admin password.';
       case 'windows':
         return 'Run in PowerShell. Windows builds are <code>amd64</code> only. First run writes <code>tinyice.json</code> and prints a generated admin password.';
+      case 'homebrew':
+        return 'In <a href="https://github.com/Homebrew/homebrew-core/blob/main/Formula/t/tinyice.rb">Homebrew core</a> &mdash; macOS (arm64 + Intel) and Linux (x86_64 + arm64). Pre-built bottles install without compiling. Manage the service with <code>brew services start tinyice</code>; config lives in <code>$(brew --prefix)/var/tinyice/</code>.';
       case 'docker':
         return 'Multi-arch image (linux/amd64, linux/arm64) on GHCR. Tags: <code>:latest</code>, <code>:beta</code>, <code>:vX.Y.Z</code>. The <code>tinyice-data</code> volume keeps config and history across restarts.';
       case 'source':

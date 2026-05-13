@@ -203,10 +203,11 @@
       <div class="dl-box">
         <div class="dl-head">
           <div class="dl-os-chips" role="tablist" aria-label="Pick your platform">
-            <button class="chip" data-os="linux"   data-default-arch="amd64">Linux</button>
-            <button class="chip" data-os="macos"   data-default-arch="arm64">macOS</button>
-            <button class="chip" data-os="windows" data-default-arch="amd64">Windows</button>
-            <button class="chip" data-os="freebsd" data-default-arch="amd64">FreeBSD</button>
+            <button class="chip" data-os="linux"    data-default-arch="amd64">Linux</button>
+            <button class="chip" data-os="macos"    data-default-arch="arm64">macOS</button>
+            <button class="chip" data-os="windows"  data-default-arch="amd64">Windows</button>
+            <button class="chip" data-os="freebsd"  data-default-arch="amd64">FreeBSD</button>
+            <button class="chip" data-os="homebrew">Homebrew</button>
             <button class="chip" data-os="docker">Docker</button>
             <button class="chip" data-os="source">From source</button>
           </div>
@@ -250,6 +251,8 @@ chmod +x tinyice
   https://github.com/DatanoiseTV/tinyice/releases/latest/download/tinyice-freebsd-arm64
 chmod +x tinyice
 ./tinyice</code></pre>
+
+          <pre data-os="homebrew" hidden><code>brew install tinyice</code></pre>
 
           <pre data-os="docker" hidden><code>docker run --rm -p 8000:8000 -p 1935:1935 \
   -v tinyice-data:/data \
