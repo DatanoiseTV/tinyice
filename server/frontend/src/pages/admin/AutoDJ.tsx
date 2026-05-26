@@ -460,7 +460,8 @@ export function AutoDJ() {
 
       {/* New AutoDJ Modal */}
       {showForm.value && (
-        <div class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
+        <div class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 overflow-y-auto">
+          <div class="flex min-h-full items-center justify-center p-4">
           <div class="bg-surface-raised border border-border rounded-xl p-6 w-full max-w-md">
             <h2 class="text-lg font-bold text-text-primary mb-4">{editingMount.value ? 'Edit AutoDJ' : 'New AutoDJ'}</h2>
             <div class="flex flex-col gap-3">
@@ -617,6 +618,7 @@ export function AutoDJ() {
                 {editingMount.value ? 'SAVE' : 'CREATE'}
               </button>
             </div>
+          </div>
           </div>
         </div>
       )}
