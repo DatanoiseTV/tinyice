@@ -78,9 +78,28 @@ body::after {
   50% { transform: scaleY(1); }
 }
 
+/* Blinking indicator for small dots. The opacity dip IS the point here —
+   don't put this on anything that carries text (see pulse-live-glow).
+   Both stops use --color-live so a red indicator doesn't pulse green;
+   the 50% stop used to hard-code the green live colour. */
 @keyframes pulse-glow {
   0%, 100% { opacity: 1; box-shadow: 0 0 4px var(--color-live); }
-  50% { opacity: 0.5; box-shadow: 0 0 8px rgba(34, 197, 94, 0.3); }
+  50% { opacity: 0.5; box-shadow: 0 0 8px color-mix(in srgb, var(--color-live) 30%, transparent); }
+}
+
+/* "This control is live" for buttons, badges and anything with a label:
+   the glow pulses, the element itself never fades. pulse-glow's 1 -> 0.5
+   opacity dip reads as flickering on a large solid control, which is
+   exactly what it did to the Go Live / Stop Broadcast button (#46). */
+@keyframes pulse-live-glow {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-live) 45%, transparent); }
+  50% { box-shadow: 0 0 12px 3px color-mix(in srgb, var(--color-live) 30%, transparent); }
+}
+
+/* Respect a reduced-motion preference: keep the live styling, drop the
+   pulsing. */
+@media (prefers-reduced-motion: reduce) {
+  [style*="pulse-glow"], [style*="pulse-live-glow"] { animation: none !important; }
 }
 
 @keyframes spin-slow {

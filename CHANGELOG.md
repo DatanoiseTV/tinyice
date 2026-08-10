@@ -5,6 +5,29 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **The LIVE badge and Stop Broadcast button flickered while
+  broadcasting** (reported on iOS, but present everywhere). Both carried
+  the `pulse-glow` animation, which dips `opacity` from 1 to 0.5 twice
+  every two seconds. That's the intended effect on a 2.5 px status dot,
+  but on a full-width 56 px button it fades the whole control and its
+  label in and out. They now use a new `pulse-live-glow` keyframe that
+  pulses only the box-shadow and never touches opacity (measured: the
+  opacity swing goes from 0.50 to 0.00).
+
+  `pulse-glow`'s midpoint also hard-coded the green live colour, so a red
+  indicator pulsed red-to-green; both stops now derive from
+  `--color-live`. Added a `prefers-reduced-motion` opt-out for both.
+
+- **The Go Live page re-rendered on every animation frame while live.**
+  The level meters wrote their values to signals that the page read
+  during render, so a 60 Hz meter update meant a 60 Hz full re-render of
+  the page. The meters now write to the DOM through refs, as the bars and
+  peak markers already did.
+
 ## [2.7.0] - 2026-08-10
 
 ### Added

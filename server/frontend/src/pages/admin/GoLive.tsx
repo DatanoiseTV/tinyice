@@ -12,13 +12,20 @@ const audioPermission = signal<'prompt' | 'granted' | 'denied'>('prompt')
 const latency = signal(0)
 const durationSec = signal(0)
 const connectionFormat = signal('')
-const levelL = signal(0)
-const levelR = signal(0)
-const headroomL = signal(-Infinity)
-const headroomR = signal(-Infinity)
-const peakL = signal(0)
-const peakR = signal(0)
 const errorMsg = signal('')
+
+// Headroom colour ladder, applied imperatively alongside the text so the
+// meters never trigger a render.
+function writeHeadroom(el: HTMLElement | null, db: number) {
+  if (!el) return
+  if (db === -Infinity || !isFinite(db)) {
+    el.textContent = '-- dB'
+    el.style.color = 'var(--color-text-tertiary)'
+    return
+  }
+  el.textContent = `${db.toFixed(1)} dB`
+  el.style.color = db > 6 ? '#22c55e' : db > 3 ? '#eab308' : '#ef4444'
+}
 
 function getMounts(): string[] {
   const data = window.__TINYICE__ as AdminData | undefined
@@ -53,6 +60,8 @@ export function GoLive() {
   const levelRRef = useRef<HTMLDivElement | null>(null)
   const peakLRef = useRef<HTMLDivElement | null>(null)
   const peakRRef = useRef<HTMLDivElement | null>(null)
+  const headroomLRef = useRef<HTMLSpanElement | null>(null)
+  const headroomRRef = useRef<HTMLSpanElement | null>(null)
   const peakLVal = useRef(0)
   const peakRVal = useRef(0)
   const peakLDecay = useRef(0)
@@ -138,12 +147,15 @@ export function GoLive() {
     status.value = 'ready'
     durationSec.value = 0
     latency.value = 0
-    levelL.value = 0
-    levelR.value = 0
-    headroomL.value = -Infinity
-    headroomR.value = -Infinity
-    peakL.value = 0
-    peakR.value = 0
+    // The meters are DOM-driven; reset them the same way.
+    peakLVal.current = 0
+    peakRVal.current = 0
+    if (levelLRef.current) levelLRef.current.style.width = '0%'
+    if (levelRRef.current) levelRRef.current.style.width = '0%'
+    if (peakLRef.current) peakLRef.current.style.left = '0%'
+    if (peakRRef.current) peakRRef.current.style.left = '0%'
+    writeHeadroom(headroomLRef.current, -Infinity)
+    writeHeadroom(headroomRRef.current, -Infinity)
   }, [])
 
   const startBroadcast = useCallback(async () => {
@@ -287,16 +299,21 @@ export function GoLive() {
         }
         const rmsL = Math.sqrt(sumL / timeLData.length)
         const rmsR = Math.sqrt(sumR / timeRData.length)
-        levelL.value = Math.min(1, rmsL * 3)
-        levelR.value = Math.min(1, rmsR * 3)
+        // Everything below is written straight to the DOM through refs
+        // rather than to signals. Signals read during render would
+        // re-render the whole page 60 times a second while live, which
+        // on a phone is enough work per frame to show up as jank in the
+        // animated LIVE badge and broadcast button.
+        const lvlL = Math.min(1, rmsL * 3)
+        const lvlR = Math.min(1, rmsR * 3)
 
         // Headroom (dB before clipping)
-        headroomL.value = rmsL > 0 ? 20 * Math.log10(1 / rmsL) : -Infinity
-        headroomR.value = rmsR > 0 ? 20 * Math.log10(1 / rmsR) : -Infinity
+        const hrL = rmsL > 0 ? 20 * Math.log10(1 / rmsL) : -Infinity
+        const hrR = rmsR > 0 ? 20 * Math.log10(1 / rmsR) : -Infinity
 
         // Peak hold with slow decay
-        if (levelL.value >= peakLVal.current) {
-          peakLVal.current = levelL.value
+        if (lvlL >= peakLVal.current) {
+          peakLVal.current = lvlL
           peakLDecay.current = 0
         } else {
           peakLDecay.current++
@@ -304,8 +321,8 @@ export function GoLive() {
             peakLVal.current = Math.max(0, peakLVal.current - 0.005)
           }
         }
-        if (levelR.value >= peakRVal.current) {
-          peakRVal.current = levelR.value
+        if (lvlR >= peakRVal.current) {
+          peakRVal.current = lvlR
           peakRDecay.current = 0
         } else {
           peakRDecay.current++
@@ -313,13 +330,13 @@ export function GoLive() {
             peakRVal.current = Math.max(0, peakRVal.current - 0.005)
           }
         }
-        peakL.value = peakLVal.current
-        peakR.value = peakRVal.current
 
-        if (levelLRef.current) levelLRef.current.style.width = `${levelL.value * 100}%`
-        if (levelRRef.current) levelRRef.current.style.width = `${levelR.value * 100}%`
-        if (peakLRef.current) peakLRef.current.style.left = `${peakL.value * 100}%`
-        if (peakRRef.current) peakRRef.current.style.left = `${peakR.value * 100}%`
+        if (levelLRef.current) levelLRef.current.style.width = `${lvlL * 100}%`
+        if (levelRRef.current) levelRRef.current.style.width = `${lvlR * 100}%`
+        if (peakLRef.current) peakLRef.current.style.left = `${peakLVal.current * 100}%`
+        if (peakRRef.current) peakRRef.current.style.left = `${peakRVal.current * 100}%`
+        writeHeadroom(headroomLRef.current, hrL)
+        writeHeadroom(headroomRRef.current, hrR)
 
         rafRef.current = requestAnimationFrame(tick)
       }
@@ -382,7 +399,7 @@ export function GoLive() {
                 ? 'bg-accent/20 text-accent'
                 : 'bg-surface-overlay text-text-tertiary'
           }`}
-          style={isLive ? { animation: 'pulse-glow 2s ease-in-out infinite', '--color-live': 'var(--color-danger)' } : undefined}
+          style={isLive ? { animation: 'pulse-live-glow 2s ease-in-out infinite', '--color-live': 'var(--color-danger)' } : undefined}
         >
           <span
             class={`w-2.5 h-2.5 rounded-full ${
@@ -518,19 +535,11 @@ export function GoLive() {
               />
             </div>
             <span
+              ref={headroomLRef}
               class="font-mono text-[10px] w-20 text-right"
-              style={{
-                color: isLive
-                  ? headroomL.value === -Infinity ? 'var(--color-text-tertiary)'
-                    : headroomL.value > 6 ? '#22c55e'
-                    : headroomL.value > 3 ? '#eab308'
-                    : '#ef4444'
-                  : 'var(--color-text-tertiary)',
-              }}
+              style={{ color: 'var(--color-text-tertiary)' }}
             >
-              {isLive && headroomL.value !== -Infinity
-                ? `${headroomL.value.toFixed(1)} dB`
-                : '-- dB'}
+              -- dB
             </span>
           </div>
           <div class="flex items-center gap-3">
@@ -548,19 +557,11 @@ export function GoLive() {
               />
             </div>
             <span
+              ref={headroomRRef}
               class="font-mono text-[10px] w-20 text-right"
-              style={{
-                color: isLive
-                  ? headroomR.value === -Infinity ? 'var(--color-text-tertiary)'
-                    : headroomR.value > 6 ? '#22c55e'
-                    : headroomR.value > 3 ? '#eab308'
-                    : '#ef4444'
-                  : 'var(--color-text-tertiary)',
-              }}
+              style={{ color: 'var(--color-text-tertiary)' }}
             >
-              {isLive && headroomR.value !== -Infinity
-                ? `${headroomR.value.toFixed(1)} dB`
-                : '-- dB'}
+              -- dB
             </span>
           </div>
         </div>
@@ -575,7 +576,7 @@ export function GoLive() {
             ? 'bg-danger text-white hover:bg-danger/90'
             : 'bg-accent text-white hover:bg-accent/90'
         }`}
-        style={isLive ? { animation: 'pulse-glow 2s ease-in-out infinite', '--color-live': 'var(--color-danger)' } : undefined}
+        style={isLive ? { animation: 'pulse-live-glow 2s ease-in-out infinite', '--color-live': 'var(--color-danger)' } : undefined}
       >
         {isLive ? 'STOP BROADCAST' : isConnecting ? 'CONNECTING...' : 'GO LIVE'}
       </button>
