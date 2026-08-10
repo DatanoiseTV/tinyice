@@ -4,7 +4,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"net"
 	"net/http"
 	"time"
 
@@ -234,7 +233,7 @@ func (s *Server) handlePasskeyLoginFinish(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	host, _, _ := net.SplitHostPort(r.RemoteAddr)
+	host := s.clientIP(r)
 	s.recordAuthSuccess(host)
 	s.createSession(w, r, loginUser)
 	logger.L.Infow("Passkey login successful", "user", loginUser.Username, "ip", host)

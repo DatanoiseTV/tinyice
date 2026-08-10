@@ -60,8 +60,11 @@ func (s *Server) logAuth() *zap.SugaredLogger {
 	return logger.L
 }
 
+// logAuthFailed records a failed authentication. ip may be either a bare
+// address (as returned by clientIP) or a host:port pair (a raw RemoteAddr);
+// both are normalised to the bare address here so the audit log is uniform.
 func (s *Server) logAuthFailed(user, ip, reason string) {
-	host, _, _ := net.SplitHostPort(ip)
+	host := stripPort(ip)
 	s.logAuth().Warnw(fmt.Sprintf("Authentication failed for user '%s' from %s: %s", user, host, reason),
 		"user", user,
 		"ip", host,
@@ -178,9 +181,7 @@ func generateToken() (string, error) {
 
 func (s *Server) touchToken(tok *config.APIToken, remoteAddr string) {
 	tok.LastUsedAt = time.Now().Format(time.RFC3339)
-	if host, _, err := net.SplitHostPort(remoteAddr); err == nil {
-		tok.LastUsedIP = host
-	}
+	tok.LastUsedIP = stripPort(remoteAddr)
 	s.tokenSaveMu.Lock()
 	if s.tokenSaveTimer == nil {
 		s.tokenSaveTimer = time.AfterFunc(60*time.Second, func() {
@@ -211,7 +212,7 @@ func (s *Server) checkAuth(r *http.Request) (*config.User, bool) {
 					return nil, false
 				}
 				// Update last-used tracking (debounced save)
-				s.touchToken(tok, r.RemoteAddr)
+				s.touchToken(tok, s.clientIP(r))
 				return user, true
 			}
 		}
@@ -248,9 +249,9 @@ func (s *Server) checkAuth(r *http.Request) (*config.User, bool) {
 		return nil, false
 	}
 
-	host, _, _ := net.SplitHostPort(r.RemoteAddr)
+	host := s.clientIP(r)
 	if err := s.checkAuthLimit(host); err != nil {
-		s.logAuthFailed(u, r.RemoteAddr, err.Error())
+		s.logAuthFailed(u, host, err.Error())
 		return nil, false
 	}
 
@@ -266,12 +267,12 @@ func (s *Server) checkAuth(r *http.Request) (*config.User, bool) {
 	}
 	if !exists {
 		s.recordAuthFailure(host)
-		s.logAuthFailed(u, r.RemoteAddr, "user not found")
+		s.logAuthFailed(u, host, "user not found")
 		return nil, false
 	}
 	if !passOK {
 		s.recordAuthFailure(host)
-		s.logAuthFailed(u, r.RemoteAddr, "invalid password")
+		s.logAuthFailed(u, host, "invalid password")
 		return nil, false
 	}
 
@@ -288,46 +289,77 @@ func (s *Server) hasAccess(user *config.User, mount string) bool {
 	return exists
 }
 
+// stripPort normalises an address to a bare IP. Accepts "host:port",
+// "[v6]:port" and a bare address, so callers can hand it either an
+// http.Request.RemoteAddr or an already-extracted IP.
+func stripPort(addr string) string {
+	if host, _, err := net.SplitHostPort(addr); err == nil {
+		return host
+	}
+	return addr
+}
+
 // clientIP returns the best-known client IP for the request. When the direct
 // peer is in the configured TrustedProxies list, the left-most entry of
 // X-Forwarded-For (the originating client) is used instead; otherwise the
 // peer address is returned. Prevents attackers from spoofing an X-F-F header
 // directly, while still giving sensible behaviour behind a reverse proxy.
+//
+// Every place that answers "which client is this?" — audit log, auth log,
+// rate limiting, bans, scan detection, listener geo — must go through here.
+// Reading RemoteAddr directly behind a reverse proxy records the proxy for
+// every request, which both blinds the audit trail and makes one abusive
+// client lock out everyone sharing the proxy.
 func (s *Server) clientIP(r *http.Request) string {
-	peer, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		peer = r.RemoteAddr
-	}
+	peer := stripPort(r.RemoteAddr)
 	if !s.isTrustedProxy(peer) {
 		return peer
 	}
 	xff := r.Header.Get("X-Forwarded-For")
 	if xff == "" {
-		if real := strings.TrimSpace(r.Header.Get("X-Real-IP")); real != "" {
+		if real := stripPort(strings.TrimSpace(r.Header.Get("X-Real-IP"))); real != "" {
 			return real
 		}
 		return peer
 	}
 	if i := strings.IndexByte(xff, ','); i >= 0 {
-		return strings.TrimSpace(xff[:i])
+		xff = xff[:i]
 	}
-	return strings.TrimSpace(xff)
+	// Proxies occasionally append a source port ("1.2.3.4:5678"), and IPv6
+	// entries may arrive bracketed. Normalise both so downstream map keys
+	// and CIDR checks see a plain address.
+	if forwarded := stripPort(strings.TrimSpace(xff)); forwarded != "" {
+		return forwarded
+	}
+	return peer
 }
 
 // isTrustedProxy reports whether the given peer address is configured as a
 // reverse-proxy hop we're willing to take X-Forwarded-For from. Loopback is
 // NOT automatically trusted — operators must opt in via TrustedProxies.
+//
+// Comparison is on the parsed IP, not the string: a proxy connecting over a
+// dual-stack socket presents as "::ffff:10.0.0.1" while the operator wrote
+// "10.0.0.1" in the config, and IPv6 has many spellings of the same address.
+// String equality silently failed on both, which reads as "trusted_proxies
+// is being ignored".
 func (s *Server) isTrustedProxy(peer string) bool {
-	ip := net.ParseIP(peer)
+	ip := net.ParseIP(stripPort(peer))
 	if ip == nil {
 		return false
 	}
 	for _, p := range s.Config.TrustedProxies {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
 		if strings.Contains(p, "/") {
 			if _, ipnet, err := net.ParseCIDR(p); err == nil && ipnet.Contains(ip) {
 				return true
 			}
-		} else if p == peer {
+			continue
+		}
+		if trusted := net.ParseIP(p); trusted != nil && trusted.Equal(ip) {
 			return true
 		}
 	}
@@ -335,10 +367,7 @@ func (s *Server) isTrustedProxy(peer string) bool {
 }
 
 func (s *Server) isWhitelisted(ipStr string) bool {
-	host, _, err := net.SplitHostPort(ipStr)
-	if err != nil {
-		host = ipStr
-	}
+	host := stripPort(ipStr)
 
 	ip := net.ParseIP(host)
 	if ip == nil {
@@ -404,7 +433,7 @@ func (s *Server) isCSRFSafe(r *http.Request) bool {
 		providedToken = r.Header.Get("X-CSRF-Token")
 	}
 	if providedToken != sess.CSRFToken {
-		logger.L.Warnf("CSRF Mismatch: provided=[%s] expected=[%s] remote=%s path=%s", providedToken, sess.CSRFToken, r.RemoteAddr, r.URL.Path)
+		logger.L.Warnf("CSRF Mismatch: provided=[%s] expected=[%s] remote=%s path=%s", providedToken, sess.CSRFToken, s.clientIP(r), r.URL.Path)
 		return false
 	}
 
@@ -415,10 +444,7 @@ func (s *Server) isBanned(ipStr string) bool {
 	if s.isWhitelisted(ipStr) {
 		return false
 	}
-	host, _, err := net.SplitHostPort(ipStr)
-	if err != nil {
-		host = ipStr
-	}
+	host := stripPort(ipStr)
 
 	s.authAttemptsMu.Lock()
 	if att, ok := s.authAttempts[host]; ok && time.Now().Before(att.LockoutBy) {
@@ -541,7 +567,7 @@ func (s *Server) reapSessions() {
 }
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
-	host, _, _ := net.SplitHostPort(r.RemoteAddr)
+	host := s.clientIP(r)
 
 	if r.Method == http.MethodPost {
 		u := r.FormValue("username")
@@ -575,7 +601,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		}
 		if !exists || !passOK {
 			s.recordAuthFailure(host)
-			s.logAuthFailed(u, r.RemoteAddr, "invalid credentials")
+			s.logAuthFailed(u, host, "invalid credentials")
 			s.Audit(r, "login_failed", "auth", u, "invalid credentials")
 			if r.Header.Get("Accept") == "application/json" {
 				jsonError(w, "Invalid username or password", http.StatusUnauthorized)

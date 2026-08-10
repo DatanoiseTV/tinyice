@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -42,11 +41,7 @@ func (s *Server) handleHLSPlaylist(w http.ResponseWriter, r *http.Request) {
 	// each viewer keeps refreshing the same IP entry inside the
 	// 30 s viewer-TTL window.
 	if stream, ok := s.Relay.GetStream(mount); ok {
-		host, _, _ := net.SplitHostPort(r.RemoteAddr)
-		if host == "" {
-			host = r.RemoteAddr
-		}
-		stream.RecordViewer(host, time.Now())
+		stream.RecordViewer(s.clientIP(r), time.Now())
 	}
 
 	playlist := hls.Playlist()
@@ -153,11 +148,7 @@ func (s *Server) handleWHEP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if stream, ok := s.Relay.GetStream(mount); ok {
-		host, _, _ := net.SplitHostPort(r.RemoteAddr)
-		if host == "" {
-			host = r.RemoteAddr
-		}
-		stream.RecordViewer(host, time.Now())
+		stream.RecordViewer(s.clientIP(r), time.Now())
 	}
 	w.Header().Set("Content-Type", "application/sdp")
 	w.Header().Set("Location", r.URL.Path)

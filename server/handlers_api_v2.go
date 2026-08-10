@@ -3,7 +3,6 @@ package server
 import (
 	"encoding/json"
 	"fmt"
-	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -44,11 +43,10 @@ func (s *Server) Audit(r *http.Request, action, resourceType, resourceID, detail
 	if user, ok := s.checkAuth(r); ok {
 		username = user.Username
 	}
-	ip := r.RemoteAddr
-	if host, _, err := net.SplitHostPort(ip); err == nil {
-		ip = host
-	}
-	s.Relay.History.RecordAudit(username, action, resourceType, resourceID, detail, ip)
+	// clientIP, not RemoteAddr: behind a reverse proxy every audit row
+	// would otherwise read as the proxy's address, which is what
+	// trusted_proxies exists to prevent.
+	s.Relay.History.RecordAudit(username, action, resourceType, resourceID, detail, s.clientIP(r))
 }
 
 func (s *Server) apiGetAuditLog(w http.ResponseWriter, r *http.Request) {

@@ -3,7 +3,6 @@ package server
 import (
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"strings"
 	"sync/atomic"
@@ -106,8 +105,9 @@ func (s *Server) handlePlaylist(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleSource(w http.ResponseWriter, r *http.Request) {
-	if s.isBanned(r.RemoteAddr) {
-		logger.L.Warnw("Banned IP source connection", "ip", r.RemoteAddr)
+	clientIP := s.clientIP(r)
+	if s.isBanned(clientIP) {
+		logger.L.Warnw("Banned IP source connection", "ip", clientIP)
 		return
 	}
 	mount := r.URL.Path
@@ -128,14 +128,13 @@ func (s *Server) handleSource(w http.ResponseWriter, r *http.Request) {
 		if u == "" {
 			u = "unknown"
 		}
-		s.logAuthFailed(u, r.RemoteAddr, "source password mismatch")
+		s.logAuthFailed(u, clientIP, "source password mismatch")
 		w.Header().Set("WWW-Authenticate", `Basic realm="Icecast"`)
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
-	host, _, _ := net.SplitHostPort(r.RemoteAddr)
-	s.logAuth().Infow("Source auth successful", "mount", mount, "ip", host)
+	s.logAuth().Infow("Source auth successful", "mount", mount, "ip", clientIP)
 
 	if s.Relay.History != nil {
 		s.Relay.History.RecordUA(r.Header.Get("User-Agent"), "source")
@@ -150,10 +149,10 @@ func (s *Server) handleSource(w http.ResponseWriter, r *http.Request) {
 	// for the loser; release in defer so the next reconnect (after
 	// the current source drops) succeeds.
 	stream := s.Relay.GetOrCreateStream(mount)
-	if !stream.TryClaimSource(r.RemoteAddr) {
+	if !stream.TryClaimSource(clientIP) {
 		existing := stream.GetSourceIP()
 		logger.L.Warnw("Source rejected: mount already has an active source",
-			"mount", mount, "new_ip", r.RemoteAddr, "existing_ip", existing)
+			"mount", mount, "new_ip", clientIP, "existing_ip", existing)
 		http.Error(w, "Mount already has an active source", http.StatusForbidden)
 		return
 	}
@@ -183,10 +182,10 @@ func (s *Server) handleSource(w http.ResponseWriter, r *http.Request) {
 	bufrw.WriteString("HTTP/1.0 200 OK\r\nServer: Icecast 2.4.4\r\nConnection: Keep-Alive\r\n\r\n")
 	bufrw.Flush()
 
-	logger.L.Infow("Source connected", "mount", mount, "ip", r.RemoteAddr, "ua", r.Header.Get("User-Agent"))
+	logger.L.Infow("Source connected", "mount", mount, "ip", clientIP, "ua", r.Header.Get("User-Agent"))
 	s.dispatchWebhook("source_connect", map[string]interface{}{
 		"mount": mount,
-		"ip":    r.RemoteAddr,
+		"ip":    clientIP,
 		"ua":    r.Header.Get("User-Agent"),
 		"name":  r.Header.Get("Ice-Name"),
 	})
@@ -341,7 +340,8 @@ func (s *Server) updateSourceMetadata(stream *relay.Stream, mount string, r *htt
 }
 
 func (s *Server) handleListener(w http.ResponseWriter, r *http.Request) {
-	if s.isBanned(r.RemoteAddr) {
+	clientIP := s.clientIP(r)
+	if s.isBanned(clientIP) {
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
@@ -360,9 +360,12 @@ func (s *Server) handleListener(w http.ResponseWriter, r *http.Request) {
 	}
 
 	flusher, _ := w.(http.Flusher)
+	// The subscriber id must stay unique per CONNECTION, so it keeps the
+	// raw RemoteAddr (which carries the peer port); only the logged/geo
+	// identity is resolved through the trusted-proxy chain.
 	id := r.RemoteAddr + "-" + fmt.Sprintf("%d", time.Now().UnixNano())
-	logger.L.Infow("Listener connected", "mount", mount, "ip", r.RemoteAddr, "ua", r.Header.Get("User-Agent"))
-	defer logger.L.Infow("Listener disconnected", "mount", mount, "ip", r.RemoteAddr)
+	logger.L.Infow("Listener connected", "mount", mount, "ip", clientIP, "ua", r.Header.Get("User-Agent"))
+	defer logger.L.Infow("Listener disconnected", "mount", mount, "ip", clientIP)
 
 	recoveryTicker := time.NewTicker(10 * time.Second)
 	defer recoveryTicker.Stop()
@@ -414,8 +417,7 @@ func (s *Server) handleListener(w http.ResponseWriter, r *http.Request) {
 			// paths. Similarly, obvious non-stream prefetch paths
 			// (favicon.ico, manifest.json, *.png …) don't deserve a ban.
 			if s.looksLikeUnknownMount(mount) {
-				host, _, _ := net.SplitHostPort(r.RemoteAddr)
-				s.recordScanAttempt(host, mount)
+				s.recordScanAttempt(clientIP, mount)
 			}
 			http.NotFound(w, r)
 			return
@@ -486,7 +488,7 @@ func (s *Server) serveStreamData(w http.ResponseWriter, r *http.Request, stream 
 	// SAME tuple we registered with — avoids races where the lookup
 	// might briefly differ across calls (DB swap mid-listen) and
 	// double-counts.
-	listenerGeo := s.GeoTracker.Add(r.RemoteAddr, currentMount)
+	listenerGeo := s.GeoTracker.Add(s.clientIP(r), currentMount)
 	defer s.GeoTracker.Remove(listenerGeo, currentMount)
 
 	// For Ogg streams (Opus / Vorbis / FLAC-in-Ogg) route all output through
