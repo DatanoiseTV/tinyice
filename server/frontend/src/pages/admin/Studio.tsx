@@ -9,7 +9,26 @@ import { Toggle } from '@/components/Toggle'
 import { EqBars } from '@/components/EqBars'
 import { PlaylistItem as PlaylistItemComp } from '@/components/PlaylistItem'
 import { FileItem } from '@/components/FileItem'
-import type { PlaylistItem, FileInfo, AutoDJEvent } from '@/types'
+import { autoDJState } from '@/types'
+import type { PlaylistItem, FileInfo, AutoDJEvent, AutoDJState } from '@/types'
+
+// Subset of the /api/autodj row this page reads. The full shape lives in
+// the AutoDJ page; keep the field names identical to the JSON.
+interface AutoDJInstanceRaw {
+  name: string
+  mount: string
+  format: string
+  state: number
+  current_song: string
+  start_time: number
+  position: number
+  duration: number
+  current_id: number
+  playlist_pos: number
+  playlist_len: number
+  shuffle: boolean
+  loop: boolean
+}
 
 // ── Current mount ──────────────────────────────────────────
 const currentMount = signal('')
@@ -17,7 +36,7 @@ const availableMounts = signal<string[]>([])
 const loadingMounts = signal(true)
 
 // ── State signals ──────────────────────────────────────────
-const state = signal<'playing' | 'paused' | 'stopped'>('stopped')
+const state = signal<AutoDJState>('stopped')
 const trackTitle = signal('No Track')
 const trackArtist = signal('Unknown Artist')
 const position = signal(0)
@@ -27,6 +46,7 @@ const uptime = signal(0)
 const volume = signal(80)
 const metadataEnabled = signal(true)
 const format = signal('mp3')
+const transportError = signal('')
 
 // ── Library state ──────────────────────────────────────────
 const libraryPath = signal('')
@@ -39,7 +59,7 @@ const activeTab = signal<'playlist' | 'queue' | 'history'>('playlist')
 const playlist = signal<PlaylistItem[]>([])
 const queue = signal<PlaylistItem[]>([])
 const history = signal<PlaylistItem[]>([])
-const currentTrackId = signal<string | null>(null)
+const currentTrackId = signal<number | null>(null)
 
 const filteredFiles = computed(() => {
   const search = librarySearch.value.toLowerCase()
@@ -47,7 +67,6 @@ const filteredFiles = computed(() => {
   return libraryFiles.value.filter(
     (f) =>
       f.name.toLowerCase().includes(search) ||
-      f.artist?.toLowerCase().includes(search) ||
       f.title?.toLowerCase().includes(search)
   )
 })
@@ -72,16 +91,10 @@ function formatUptime(seconds: number): string {
   return h > 0 ? `${h}h ${m}m` : `${m}m`
 }
 
-function totalDuration(items: PlaylistItem[]): string {
-  const total = items.reduce((sum, item) => sum + item.duration, 0)
-  const h = Math.floor(total / 3600)
-  const m = Math.floor((total % 3600) / 60)
-  return h > 0 ? `${h}h ${m}m` : `${m}m`
-}
-
 function enc() { return encodeURIComponent(currentMount.value) }
 
 function resetState() {
+  transportError.value = ''
   state.value = 'stopped'
   trackTitle.value = 'No Track'
   trackArtist.value = 'Unknown Artist'
@@ -101,6 +114,30 @@ function resetState() {
   queue.value = []
   history.value = []
   currentTrackId.value = null
+}
+
+// applyEvent folds one SSE `autodj` payload into the now-playing panel.
+// The payload is streamerEventInfo (see server/handlers_api.go): a numeric
+// state enum and a flat `song` string, NOT the `currentTrack` object this
+// used to reach for. Reading that threw on every tick — and because the
+// throw happened after `state` had already been assigned the raw number,
+// the transport button compared 1 === 'playing' and stayed on Play
+// forever. That is why the Studio "did nothing" when you pressed it.
+function applyEvent(evt: AutoDJEvent) {
+  state.value = autoDJState(evt.state)
+  trackTitle.value = evt.song || 'No Track'
+  // The AutoDJ reports "Artist - Title" as one string; split it for the
+  // two-line display, and fall back to just the title.
+  const dash = evt.song ? evt.song.indexOf(' - ') : -1
+  trackArtist.value = dash > 0 ? evt.song.slice(0, dash) : 'Unknown Artist'
+  if (dash > 0) trackTitle.value = evt.song.slice(dash + 3)
+  position.value = evt.position || 0
+  duration.value = evt.duration || 0
+  currentTrackId.value = typeof evt.current_id === 'number' && evt.current_id >= 0
+    ? evt.current_id
+    : null
+  if (evt.playlist) playlist.value = evt.playlist
+  if (evt.queue) queue.value = evt.queue
 }
 
 function fetchLibrary(path: string) {
@@ -126,6 +163,40 @@ function fetchAllData() {
   fetchLibrary('')
   fetchPlaylist()
   fetchQueue()
+  fetchTransportState()
+}
+
+// fetchTransportState seeds the now-playing panel from the REST list.
+// Without it the panel sat at "stopped / No Track" until the first SSE
+// tick, and a Studio opened against an already-playing AutoDJ showed a
+// Play button for an instance that was live.
+function fetchTransportState() {
+  const mount = currentMount.value
+  api.get<AutoDJInstanceRaw[]>('/api/autodj')
+    .then((data) => {
+      const inst = data.find((d) => d.mount === mount)
+      if (!inst) return
+      format.value = inst.format || format.value
+      applyEvent({
+        name: inst.name,
+        mount: inst.mount,
+        state: inst.state,
+        song: inst.current_song,
+        start_time: inst.start_time,
+        position: inst.position,
+        duration: inst.duration,
+        current_id: inst.current_id,
+        playlist_pos: inst.playlist_pos,
+        playlist_len: inst.playlist_len,
+        shuffle: inst.shuffle,
+        loop: inst.loop,
+        // Playlist and queue have their own endpoints; don't let the
+        // summary overwrite what those returned.
+        queue: null,
+        playlist: null,
+      })
+    })
+    .catch(() => { /* the mount list effect already surfaces load failures */ })
 }
 
 export function Studio() {
@@ -186,16 +257,12 @@ export function Studio() {
     if (sseRef.current) sseRef.current.close()
     if (timerRef.current) clearInterval(timerRef.current)
 
-    const sse = createSSE('/events')
+    const sse = createSSE('/admin/events')
     sseRef.current = sse
 
     sse.on('autodj', (evt: AutoDJEvent) => {
       if (evt.mount !== mount) return
-      state.value = evt.state
-      trackTitle.value = evt.currentTrack.title || evt.currentTrack.file || 'No Track'
-      trackArtist.value = evt.currentTrack.artist || 'Unknown Artist'
-      position.value = evt.position
-      duration.value = evt.duration
+      applyEvent(evt)
     })
     sse.on('stream', (evt: { mount: string; listeners: number }) => {
       if (evt.mount !== mount) return
@@ -213,6 +280,8 @@ export function Studio() {
 
   const handleTransport = useCallback((action: string) => {
     api.post(`/api/autodj/${enc()}/${action}`)
+      .then(() => { fetchTransportState(); fetchQueue() })
+      .catch((e) => { transportError.value = (e as Error).message || `${action} failed` })
   }, [])
 
   const handleVolumeChange = useCallback((v: number) => {
@@ -231,18 +300,20 @@ export function Studio() {
   }, [])
 
   const handleAddAll = useCallback(() => {
-    const files = libraryFiles.value.filter((f) => !f.isDir)
+    const files = libraryFiles.value.filter((f) => !f.is_dir)
     api.post(`/api/autodj/${enc()}/playlist/add`, { paths: files.map((f) => f.path) })
       .then(() => fetchPlaylist())
   }, [])
 
-  const handleRemoveTrack = useCallback((id: string) => {
+  const handleRemoveTrack = useCallback((id: number) => {
     api.post(`/api/autodj/${enc()}/playlist/remove`, { id })
       .then(() => fetchPlaylist())
   }, [])
 
-  const handlePlayNext = useCallback((id: string) => {
+  const handlePlayNext = useCallback((id: number) => {
     api.post(`/api/autodj/${enc()}/playlist/playnext`, { id })
+      .then(() => fetchQueue())
+      .catch((e) => { transportError.value = (e as Error).message || 'Play next failed' })
   }, [])
 
   const handleClear = useCallback(() => {
@@ -260,7 +331,7 @@ export function Studio() {
   }, [])
 
   const handleFolderClick = useCallback((file: FileInfo) => {
-    if (file.isDir) fetchLibrary(file.path)
+    if (file.is_dir) fetchLibrary(file.path)
   }, [])
 
   const getFreqData = useCallback(() => null, [])
@@ -345,6 +416,27 @@ export function Studio() {
           <span class="font-mono text-[10px] text-text-tertiary">{formatUptime(uptime.value)}</span>
         </div>
       </div>
+
+      {/* Transport error — a thin persistent bar rather than an overlay,
+          so a failed command is visible without hiding the console. */}
+      {transportError.value && (
+        <div
+          role="alert"
+          class="flex items-center gap-3 border-b border-danger/30 bg-danger/10 px-5 py-2 text-sm text-danger flex-shrink-0"
+        >
+          <svg class="w-4 h-4 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
+          </svg>
+          <span class="flex-1">{transportError.value}</span>
+          <button
+            onClick={() => { transportError.value = '' }}
+            class="font-mono text-[10px] tracking-widest uppercase opacity-70 hover:opacity-100"
+            aria-label="Dismiss error"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {/* Main 3-column layout */}
       <div class="flex flex-1 overflow-hidden">
@@ -456,6 +548,27 @@ export function Studio() {
                 label="Metadata"
               />
             </div>
+
+            {/* Monitor. The transport above drives what the MOUNT
+                broadcasts; this is local playback of that mount so the
+                operator can hear what listeners hear. preload="none"
+                keeps it from opening a listener connection until the
+                operator actually presses play. */}
+            <div class="flex flex-col items-center gap-2 pt-3 border-t border-border w-full">
+              <span class="font-mono text-[9px] tracking-widest text-text-tertiary uppercase">
+                MONITOR
+              </span>
+              <audio
+                key={mount}
+                src={mount}
+                controls
+                preload="none"
+                class="w-full h-9"
+                onError={() => {
+                  transportError.value = `Monitor could not play ${mount}. The mount is only live while the AutoDJ is playing.`
+                }}
+              />
+            </div>
           </div>
         </div>
 
@@ -504,7 +617,7 @@ export function Studio() {
               </button>
             </div>
             <span class="font-mono text-[10px] text-text-tertiary">
-              {activeList.length} tracks &middot; {totalDuration(activeList)}
+              {activeList.length} {activeList.length === 1 ? 'track' : 'tracks'}
             </span>
           </div>
 

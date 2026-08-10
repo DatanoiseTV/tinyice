@@ -6,12 +6,6 @@ interface FileItemProps {
   active: boolean
 }
 
-function formatDuration(seconds: number): string {
-  const m = Math.floor(seconds / 60)
-  const s = Math.floor(seconds % 60)
-  return `${m}:${s.toString().padStart(2, '0')}`
-}
-
 export function FileItem({ file, onAdd, active }: FileItemProps) {
   return (
     <div
@@ -23,7 +17,7 @@ export function FileItem({ file, onAdd, active }: FileItemProps) {
     >
       {/* Icon */}
       <div class="w-5 h-5 flex-shrink-0 flex items-center justify-center">
-        {file.isDir ? (
+        {file.is_dir ? (
           <svg class="w-4 h-4 text-accent" viewBox="0 0 24 24" fill="currentColor">
             <path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z" />
           </svg>
@@ -37,19 +31,15 @@ export function FileItem({ file, onAdd, active }: FileItemProps) {
       {/* Name + metadata */}
       <div class="flex-1 min-w-0">
         <div class="text-sm text-text-primary truncate">
-          {file.name}{file.isDir && '/'}
+          {file.name}{file.is_dir && '/'}
         </div>
-        {!file.isDir && (file.artist || file.duration || file.bitrate) && (
-          <div class="flex items-center gap-2 font-mono text-[9px] text-text-tertiary">
-            {file.artist && <span class="truncate">{file.artist}</span>}
-            {file.duration != null && file.duration > 0 && <span>{formatDuration(file.duration)}</span>}
-            {file.bitrate != null && file.bitrate > 0 && <span>{file.bitrate}k</span>}
-          </div>
+        {!file.is_dir && file.title && file.title !== file.name && (
+          <div class="font-mono text-[9px] text-text-tertiary truncate">{file.title}</div>
         )}
       </div>
 
       {/* Add button */}
-      {!file.isDir && (
+      {!file.is_dir && (
         <button
           onClick={(e) => { e.stopPropagation(); onAdd() }}
           class={`w-6 h-6 rounded flex items-center justify-center transition-all ${

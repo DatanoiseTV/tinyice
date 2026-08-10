@@ -526,7 +526,12 @@ func (s *Server) setupRoutes() *http.ServeMux {
 		case "playlist/reorder":
 			s.apiReorderPlaylist(w, r)
 		case "playlist/playnext":
-			s.apiAddToQueue(w, r) // playnext adds to front of queue
+			// Front of queue — apiAddToQueue reads this flag because the
+			// caller's JSON body carries only the playlist entry id.
+			q := r.URL.Query()
+			q.Set("front", "true")
+			r.URL.RawQuery = q.Encode()
+			s.apiAddToQueue(w, r)
 		case "playlist/save":
 			s.handlePlayerSavePlaylist(w, r)
 		case "playlist/load":

@@ -68,13 +68,39 @@ type streamerEventInfo struct {
 	State       int                  `json:"state"`
 	CurrentSong string               `json:"song"`
 	StartTime   int64                `json:"start_time"`
+	// Position is seconds elapsed in the current track, computed
+	// server-side. The UI can't derive it from start_time without
+	// trusting the browser clock to agree with ours.
+	Position    float64              `json:"position"`
 	Duration    float64              `json:"duration"`
+	// CurrentID is the playlist id of the track actually playing, so a
+	// UI can highlight the right row. -1 when the track came from the
+	// queue or an external song command.
+	CurrentID   int                  `json:"current_id"`
 	PlaylistPos int                  `json:"playlist_pos"`
 	PlaylistLen int                  `json:"playlist_len"`
 	Shuffle     bool                 `json:"shuffle"`
 	Loop        bool                 `json:"loop"`
 	Queue       []relay.PlaylistItem `json:"queue"`
 	Playlist    []relay.PlaylistItem `json:"playlist"`
+}
+
+// trackPosition returns how far into the current track the AutoDJ is, in
+// seconds. Zero unless a track is actually playing — a paused or stopped
+// streamer would otherwise report an ever-growing position derived from
+// the last track's start time.
+func trackPosition(stats relay.StreamerStats) float64 {
+	if stats.State != relay.StatePlaying || stats.StartTime.IsZero() {
+		return 0
+	}
+	elapsed := time.Since(stats.StartTime).Seconds()
+	if elapsed < 0 {
+		return 0
+	}
+	if d := stats.Duration.Seconds(); d > 0 && elapsed > d {
+		return d
+	}
+	return elapsed
 }
 
 func (s *Server) collectStatsPayload(user *config.User) ([]byte, error) {
@@ -168,7 +194,10 @@ func (s *Server) collectStatsPayload(user *config.User) ([]byte, error) {
 				State:       int(stats.State),
 				CurrentSong: stats.CurrentSong,
 				StartTime:   stats.StartTime.Unix(),
+				Position:    trackPosition(stats),
 				Duration:    stats.Duration.Seconds(),
+				CurrentID:   stats.CurrentID,
+				PlaylistPos: stats.CurrentPos,
 				PlaylistLen: stats.PlaylistLen,
 				Shuffle:     stats.Shuffle,
 				Loop:        stats.Loop,

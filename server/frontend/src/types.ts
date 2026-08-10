@@ -80,32 +80,72 @@ export interface StreamEvent {
   video_kbps?: number
 }
 
+// AutoDJState mirrors relay.StreamerState.
+export const AUTODJ_STOPPED = 0
+export const AUTODJ_PLAYING = 1
+export const AUTODJ_PAUSED = 2
+
+export type AutoDJState = 'playing' | 'paused' | 'stopped'
+
+export function autoDJState(raw: number | undefined): AutoDJState {
+  switch (raw) {
+    case AUTODJ_PLAYING:
+      return 'playing'
+    case AUTODJ_PAUSED:
+      return 'paused'
+    default:
+      return 'stopped'
+  }
+}
+
+// AutoDJEvent is the payload of the SSE `autodj` event. It mirrors
+// streamerEventInfo in server/handlers_api.go field for field — this type
+// previously described a shape the server never sent (a `currentTrack`
+// object and a string state), so every consumer read undefined and threw.
 export interface AutoDJEvent {
+  name: string
   mount: string
-  state: 'playing' | 'paused' | 'stopped'
-  currentTrack: { title: string; artist: string; file: string }
+  /** 0 = stopped, 1 = playing, 2 = paused — use autoDJState() to map. */
+  state: number
+  song: string
+  start_time: number
+  /** Seconds elapsed in the current track; 0 unless playing. */
   position: number
+  /** Track length in seconds, or 0 when the input format doesn't expose one. */
   duration: number
-  queue: string[]
+  /** Playlist id of the track actually playing; -1 for queue / command tracks. */
+  current_id: number
+  playlist_pos: number
+  playlist_len: number
+  shuffle: boolean
+  loop: boolean
+  queue: PlaylistItem[] | null
+  playlist: PlaylistItem[] | null
 }
 
 // API types
+
+// PlaylistItem mirrors relay.PlaylistItem. `id` is -1 for queue entries,
+// which have no stable playlist identity.
 export interface PlaylistItem {
-  id: string
-  file: string
+  id: number
+  path: string
   title: string
-  artist: string
-  duration: number
 }
 
+// FileInfo mirrors the fileEntry struct in apiGetFiles. It is snake_case
+// on the wire; the camelCase version this used to declare meant `isDir`
+// read undefined, so directories rendered as tracks and clicking one did
+// nothing. There is no per-file artist/duration/bitrate — the endpoint
+// only stats names and reads the title tag.
 export interface FileInfo {
   name: string
+  title: string
+  is_dir: boolean
+  /** Path relative to the AutoDJ music directory. */
   path: string
-  isDir: boolean
-  title?: string
-  artist?: string
-  duration?: number
-  bitrate?: number
+  abs_path: string
+  is_pls: boolean
 }
 
 declare global {

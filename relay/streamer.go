@@ -181,7 +181,13 @@ func (s *Streamer) TogglePlay() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.State == StatePlaying {
-		s.State = StateStopped
+		s.State = StatePaused
+		// Cut the track that's mid-encode. Without this, "pause" only
+		// took effect when the current file happened to end, so the
+		// mount kept broadcasting for up to a full track.
+		if s.fileCancel != nil {
+			s.fileCancel()
+		}
 	} else {
 		s.State = StatePlaying
 	}
@@ -212,6 +218,14 @@ func (s *Streamer) ClearQueue() {
 	s.Queue = []string{}
 }
 
+// Stop halts playback. It is a TRANSPORT operation: the playback loop
+// stays alive and parked on the state channel, so a later Play() resumes.
+//
+// It deliberately does NOT cancel the streamer-lifetime context. Doing so
+// terminated runStreamerLoop for good, which is why "pause, then play"
+// (API, MPD `stop`, and the enable/disable toggle all funnel here) left
+// the AutoDJ permanently silent with the UI still reporting it as an
+// instance. Use Shutdown for the teardown case.
 func (s *Streamer) Stop() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -219,10 +233,34 @@ func (s *Streamer) Stop() {
 	if s.fileCancel != nil {
 		s.fileCancel()
 	}
-	// Cancel the streamer-lifetime context too, so any children
-	// (e.g. on_play_command sh -c invocations) get SIGKILL via
-	// exec.CommandContext rather than living up to their per-command
-	// timeout (default 10 s) past the operator's Stop click.
+	s.signalStateChange()
+}
+
+// Pause halts playback and reports StatePaused. Resuming with Play()
+// continues with the next track — a live mount has no seekable backlog,
+// so there is nothing to resume mid-file.
+func (s *Streamer) Pause() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.State = StatePaused
+	if s.fileCancel != nil {
+		s.fileCancel()
+	}
+	s.signalStateChange()
+}
+
+// Shutdown tears the streamer down for good: playback stops and the
+// streamer-lifetime context is cancelled, which ends runStreamerLoop and
+// SIGKILLs any children (on_play_command `sh -c` invocations) instead of
+// letting them live out their per-command timeout. The instance is not
+// reusable afterwards — StartStreamer must build a new one.
+func (s *Streamer) Shutdown() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.State = StateStopped
+	if s.fileCancel != nil {
+		s.fileCancel()
+	}
 	if s.cancel != nil {
 		s.cancel()
 	}
@@ -244,6 +282,45 @@ func (s *Streamer) PushToQueue(path string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.Queue = append(s.Queue, path)
+}
+
+// PushToQueueFront puts a track at the head of the queue — the "play
+// next" action, as opposed to PushToQueue's "play eventually".
+func (s *Streamer) PushToQueueFront(path string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.Queue = append([]string{path}, s.Queue...)
+}
+
+// PathForPlaylistID resolves a playlist entry's stable ID (as handed to
+// the UI in PlaylistItem.ID) to its file path.
+func (s *Streamer) PathForPlaylistID(id int) (string, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, p := range s.Playlist {
+		if p.ID == id {
+			return p.Path, true
+		}
+	}
+	return "", false
+}
+
+// RemoveFromPlaylistByID removes the entry with the given stable ID.
+// RemoveFromPlaylist takes an INDEX (that's the MPD protocol's model);
+// the JSON API hands us the ID it previously read from PlaylistItem, and
+// the two only agree until the first removal.
+func (s *Streamer) RemoveFromPlaylistByID(id int) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, p := range s.Playlist {
+		if p.ID == id {
+			s.Playlist = append(s.Playlist[:i], s.Playlist[i+1:]...)
+			s.PlaylistVersion++
+			s.broadcastIdle("playlist")
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Streamer) RemoveFromQueue(index int) {
@@ -271,10 +348,16 @@ type PlaylistSong struct {
 	ID   int
 }
 
+// PlaylistItem is the wire shape of one playlist / queue entry. The JSON
+// tags matter: without them Go emitted "Title"/"Path"/"ID" while every
+// other field of the AutoDJ API is snake_case, so the admin UI read
+// undefined for each one and rendered blank rows.
+//
+// ID is -1 for queue entries, which have no stable playlist identity.
 type PlaylistItem struct {
-	Title string
-	Path  string
-	ID    int
+	Title string `json:"title"`
+	Path  string `json:"path"`
+	ID    int    `json:"id"`
 }
 
 func (s *Streamer) GetPlaylistInfo() []PlaylistItem {
@@ -695,12 +778,19 @@ func (s *Streamer) execOnPlayCommand(artist, title, album, filePath, mount strin
 }
 
 type StreamerStats struct {
-	Name           string
-	Mount          string
-	State          StreamerState
-	CurrentSong    string
-	StartTime      time.Time
-	Duration       time.Duration
+	Name        string
+	Mount       string
+	State       StreamerState
+	CurrentSong string
+	StartTime   time.Time
+	Duration    time.Duration
+	// PlaylistPos is the cursor for the NEXT selection; CurrentPos is
+	// incremented as soon as a track is picked. CurrentID / CurrentPos
+	// identify the track actually playing, which is what a UI needs to
+	// highlight the right row (-1 when the track came from the queue or
+	// an external song command).
+	CurrentID      int
+	CurrentPos     int
 	PlaylistPos    int
 	PlaylistLen    int
 	Shuffle        bool
@@ -731,6 +821,8 @@ func (s *Streamer) GetStats() StreamerStats {
 		CurrentSong:    s.CurrentFile,
 		StartTime:      s.CurrentFileTime,
 		Duration:       s.CurrentFileDuration,
+		CurrentID:      s.CurrentPlayingID,
+		CurrentPos:     s.CurrentPlayingPos,
 		PlaylistPos:    s.CurrentPos,
 		PlaylistLen:    len(s.Playlist),
 		Shuffle:        s.Shuffle,
@@ -835,10 +927,31 @@ func (sm *StreamerManager) StopStreamer(mount string) {
 			logger.L.Debugf("AutoDJ %s: Stopping MPD server", s.Name)
 			s.MPDServer.Stop()
 		}
+		// Transport stop, not Shutdown: the instance stays in the map so
+		// the UI can restart it, and that only works while the playback
+		// loop is still alive. ResumeStreamer is the matching restart.
 		s.Stop()
-		// We DON'T delete it from sm.instances anymore,
-		// so it remains manageable via UI even when stopped.
 	}
+}
+
+// ResumeStreamer restarts a streamer that StopStreamer parked: it re-opens
+// the MPD listener (StopStreamer closes it to release the port) and puts
+// the transport back into playing state. Returns nil when no such instance
+// exists, so callers can fall back to StartStreamer.
+func (sm *StreamerManager) ResumeStreamer(mount string) *Streamer {
+	sm.mu.RLock()
+	s, ok := sm.instances[mount]
+	sm.mu.RUnlock()
+	if !ok {
+		return nil
+	}
+	if s.MPDServer != nil {
+		if err := s.MPDServer.Start(); err != nil {
+			logger.L.Warnf("AutoDJ %s: could not restart MPD server: %v", s.Name, err)
+		}
+	}
+	s.Play()
+	return s
 }
 
 // DeleteStreamer stops the streamer and removes it from the manager entirely.
@@ -853,7 +966,7 @@ func (sm *StreamerManager) DeleteStreamer(mount string) {
 			logger.L.Debugf("AutoDJ %s: Stopping MPD server", s.Name)
 			s.MPDServer.Stop()
 		}
-		s.Stop()
+		s.Shutdown()
 		delete(sm.instances, mount)
 	}
 }

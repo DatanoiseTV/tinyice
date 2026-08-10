@@ -3,7 +3,8 @@ import { signal } from '@preact/signals'
 import { api } from '@/lib/api'
 import { createSSE } from '@/lib/sse'
 import { EqBars } from '@/components/EqBars'
-import type { AutoDJEvent } from '@/types'
+import { autoDJState } from '@/types'
+import type { AutoDJEvent, AutoDJState, PlaylistItem } from '@/types'
 
 // Matches the Go API response from /api/autodj
 interface AutoDJInstanceRaw {
@@ -14,7 +15,9 @@ interface AutoDJInstanceRaw {
   state: number // 0=stopped, 1=playing, 2=paused
   current_song: string
   start_time: number
+  position: number
   duration: number
+  current_id: number
   playlist_pos: number
   playlist_len: number
   shuffle: boolean
@@ -30,7 +33,7 @@ interface AutoDJInstanceRaw {
   mpd_enabled: boolean
   mpd_port: string
   last_playlist: string
-  queue: Array<{ id: string; file: string; title: string }> | null
+  queue: PlaylistItem[] | null
 }
 
 interface AutoDJInstance {
@@ -38,8 +41,9 @@ interface AutoDJInstance {
   mount: string
   format: string
   bitrate: number
-  state: 'playing' | 'paused' | 'stopped'
+  state: AutoDJState
   currentSong: string
+  position: number
   duration: number
   playlistLen: number
   shuffle: boolean
@@ -54,14 +58,14 @@ interface AutoDJInstance {
 }
 
 function mapInstance(raw: AutoDJInstanceRaw): AutoDJInstance {
-  const stateMap: Record<number, 'playing' | 'paused' | 'stopped'> = { 0: 'stopped', 1: 'playing', 2: 'paused' }
   return {
     name: raw.name,
     mount: raw.mount,
     format: raw.format,
     bitrate: raw.bitrate,
-    state: stateMap[raw.state] ?? 'stopped',
+    state: autoDJState(raw.state),
     currentSong: raw.current_song || '',
+    position: raw.position || 0,
     duration: raw.duration,
     playlistLen: raw.playlist_len,
     shuffle: raw.shuffle,
@@ -72,12 +76,13 @@ function mapInstance(raw: AutoDJInstanceRaw): AutoDJInstance {
     songCommandTimeout: raw.song_command_timeout || 5,
     onPlayCommand: raw.on_play_command || '',
     onPlayCommandTimeout: raw.on_play_command_timeout || 10,
-    queue: (raw.queue ?? []).map(q => q.title || q.file),
+    queue: (raw.queue ?? []).map((q) => q.title || q.path),
   }
 }
 
 const instances = signal<AutoDJInstance[]>([])
 const loading = signal(true)
+const loadError = signal('')
 const showForm = signal(false)
 const editingMount = signal<string | null>(null) // null = creating new, string = editing existing mount
 const formName = signal('')
@@ -163,15 +168,46 @@ async function deleteAutoDJ(mount: string) {
   loadAutoDJ()
 }
 
-async function loadAutoDJ() {
-  loading.value = true
+// loadAutoDJ refetches the instance list. The spinner is only shown for
+// the first load: the SSE feed ticks twice a second, and toggling
+// `loading` on every background refresh replaced the whole page with
+// "Loading..." several times a second.
+async function loadAutoDJ(showSpinner = false) {
+  if (showSpinner) loading.value = true
   try {
     const raw = await api.get<AutoDJInstanceRaw[]>('/api/autodj')
     instances.value = raw.map(mapInstance)
-  } catch {
-    instances.value = []
+    loadError.value = ''
+  } catch (e) {
+    // Don't blank the page on a transient failure — keep the last known
+    // instances on screen and show a non-flashing banner instead.
+    loadError.value = (e as Error).message || 'Could not load AutoDJ instances'
+    if (showSpinner) instances.value = []
   }
   loading.value = false
+}
+
+// applyEvent folds one SSE `autodj` payload into the matching card. This
+// is how live state reaches the UI; the previous handler assigned fields
+// the server never sends (currentTrack/position on a raw event) and threw
+// on the first one, leaving the transport state stuck at the numeric
+// enum so every card rendered as stopped.
+function applyEvent(evt: AutoDJEvent) {
+  instances.value = instances.value.map((inst) =>
+    inst.mount === evt.mount
+      ? {
+          ...inst,
+          state: autoDJState(evt.state),
+          currentSong: evt.song || '',
+          position: evt.position || 0,
+          duration: evt.duration || 0,
+          playlistLen: evt.playlist_len ?? inst.playlistLen,
+          shuffle: evt.shuffle ?? inst.shuffle,
+          loop: evt.loop ?? inst.loop,
+          queue: (evt.queue ?? []).map((q) => q.title || q.path),
+        }
+      : inst
+  )
 }
 
 function formatTime(seconds: number): string {
@@ -182,12 +218,17 @@ function formatTime(seconds: number): string {
 
 function InstanceCard({ inst }: { inst: AutoDJInstance }) {
   const isPlaying = inst.state === 'playing'
-  const isPaused = inst.state === 'paused'
   const isStopped = inst.state === 'stopped'
-  const progress = 0 // Position tracking requires SSE updates
+  // Duration is 0 whenever the decoder can't report a track length
+  // up-front, which is most non-MP3 input — show elapsed time only in
+  // that case rather than a bar that never moves.
+  const hasDuration = inst.duration > 0
+  const progress = hasDuration ? Math.min(100, (inst.position / inst.duration) * 100) : 0
 
   const handleTransport = (action: string) => {
     api.post(`/api/autodj/${encodeURIComponent(inst.mount)}/${action}`)
+      .then(() => loadAutoDJ())
+      .catch((e) => { loadError.value = (e as Error).message || 'Transport command failed' })
   }
 
   return (
@@ -280,8 +321,10 @@ function InstanceCard({ inst }: { inst: AutoDJInstance }) {
               />
             </div>
             <div class="flex justify-between mt-1">
-              <span class="font-mono text-[10px] text-text-tertiary">{formatTime(0)}</span>
-              <span class="font-mono text-[10px] text-text-tertiary">{formatTime(inst.duration)}</span>
+              <span class="font-mono text-[10px] text-text-tertiary">{formatTime(inst.position)}</span>
+              <span class="font-mono text-[10px] text-text-tertiary">
+                {hasDuration ? formatTime(inst.duration) : '--:--'}
+              </span>
             </div>
           </div>
 
@@ -387,30 +430,25 @@ function InstanceCard({ inst }: { inst: AutoDJInstance }) {
 
 export function AutoDJ() {
   useEffect(() => {
-    loadAutoDJ()
+    loadAutoDJ(true)
 
-    const sse = createSSE('/events')
-    sse.on('autodj', (evt: AutoDJEvent) => {
-      instances.value = instances.value.map((inst) =>
-        inst.mount === evt.mount
-          ? {
-              ...inst,
-              state: evt.state,
-              currentTrack: evt.currentTrack,
-              position: evt.position,
-              duration: evt.duration,
-              queue: evt.queue,
-            }
-          : inst
-      )
-    })
+    const sse = createSSE('/admin/events')
 
-    sse.on('stream', () => {
-      // Stream events update listener counts — reload data
-      loadAutoDJ()
-    })
+    // Live transport/track state arrives on every SSE tick and is applied
+    // in place. No refetch: the event already carries everything a card
+    // renders that can change while an instance is running.
+    sse.on('autodj', applyEvent)
 
-    return () => sse.close()
+    // Anything structural (an instance added, removed or reconfigured
+    // from another tab) still needs the REST list, but on a slow timer —
+    // refetching on each `stream` event meant one GET per stream per SSE
+    // tick, i.e. a continuous stream of requests.
+    const refresh = setInterval(() => { loadAutoDJ() }, 30000)
+
+    return () => {
+      clearInterval(refresh)
+      sse.close()
+    }
   }, [])
 
   return (
@@ -428,6 +466,20 @@ export function AutoDJ() {
           New AutoDJ
         </button>
       </div>
+
+      {/* Load error — a persistent bar, not a flashing overlay, so a
+          transient failure doesn't wipe the page. */}
+      {loadError.value && (
+        <div
+          role="alert"
+          class="mb-4 flex items-center gap-3 rounded-lg border border-danger/30 bg-danger/10 px-4 py-2.5 text-sm text-danger"
+        >
+          <svg class="w-4 h-4 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
+          </svg>
+          <span class="flex-1">{loadError.value}</span>
+        </div>
+      )}
 
       {/* Loading */}
       {loading.value && (

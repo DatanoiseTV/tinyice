@@ -9,12 +9,6 @@ interface PlaylistItemProps {
   onPlayNext: () => void
 }
 
-function formatDuration(seconds: number): string {
-  const m = Math.floor(seconds / 60)
-  const s = Math.floor(seconds % 60)
-  return `${m}:${s.toString().padStart(2, '0')}`
-}
-
 export function PlaylistItem({ item, index, playing, onRemove, onPlayNext }: PlaylistItemProps) {
   return (
     <div
@@ -33,14 +27,12 @@ export function PlaylistItem({ item, index, playing, onRemove, onPlayNext }: Pla
         )}
       </div>
 
-      {/* Track info */}
-      <div class="flex-1 min-w-0">
+      {/* Track info. The API exposes title + path only — there is no
+          per-item artist or duration, so don't render empty rows for
+          them. */}
+      <div class="flex-1 min-w-0" title={item.path}>
         <div class={`text-sm truncate ${playing ? 'text-accent font-medium' : 'text-text-primary'}`}>
-          {item.title || item.file}
-        </div>
-        <div class="flex items-center gap-2 text-[11px] text-text-tertiary">
-          {item.artist && <span class="truncate">{item.artist}</span>}
-          {item.duration > 0 && <span class="font-mono">{formatDuration(item.duration)}</span>}
+          {item.title || item.path}
         </div>
       </div>
 
