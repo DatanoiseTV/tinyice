@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"runtime"
 	"runtime/debug"
 	"strings"
 	"syscall"
@@ -39,6 +40,7 @@ var (
 	pidFile     = flag.String("pid-file", "", "Path to PID file")
 	authLogFile = flag.String("auth-log-file", "", "Path to separate authentication audit log")
 	forceSetup  = flag.Bool("force-setup", false, "Force setup wizard even if config already has an admin password")
+	showVersion = flag.Bool("version", false, "Print version information and exit")
 )
 
 func generateRandomString(n int) string {
@@ -47,6 +49,38 @@ func generateRandomString(n int) string {
 		return "insecure_fallback"
 	}
 	return hex.EncodeToString(b)
+}
+
+// resolveBuildInfo fills Version / Commit from the embedded build info when
+// they weren't stamped in via -ldflags (e.g. `go install`, `go run`).
+func resolveBuildInfo() {
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return
+	}
+	if Version == "dev" && info.Main.Version != "" && info.Main.Version != "(devel)" {
+		Version = info.Main.Version
+	}
+	if Commit != "unknown" {
+		return
+	}
+	for _, setting := range info.Settings {
+		if setting.Key == "vcs.revision" {
+			Commit = setting.Value
+			break
+		}
+	}
+}
+
+// versionString is what `tinyice --version` prints. Everything here is
+// something we ask for in bug reports, so keep it on one greppable line.
+func versionString() string {
+	commit := Commit
+	if len(commit) > 12 {
+		commit = commit[:12]
+	}
+	return fmt.Sprintf("TinyIce %s (commit %s, %s, %s/%s)",
+		Version, commit, runtime.Version(), runtime.GOOS, runtime.GOARCH)
 }
 
 func initLogging() *zap.SugaredLogger {
@@ -75,20 +109,17 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  get <option>          Get a configuration value\n")
 		fmt.Fprintf(os.Stderr, "  set <option> <value>  Set a configuration value\n")
 		fmt.Fprintf(os.Stderr, "  dump-config           Pretty-print the current configuration\n")
+		fmt.Fprintf(os.Stderr, "  version               Print version information\n")
 	}
 	flag.Parse()
 
-	// Try to get version and commit from build info if not set via ldflags
-	if info, ok := debug.ReadBuildInfo(); ok {
-		if Version == "dev" && info.Main.Version != "" && info.Main.Version != "(devel)" {
-			Version = info.Main.Version
-		}
-		for _, setting := range info.Settings {
-			if setting.Key == "vcs.revision" {
-				Commit = setting.Value
-				break
-			}
-		}
+	resolveBuildInfo()
+
+	// Version reporting must not depend on a readable config or a writable
+	// PID file — it's the first thing a user runs when filing a bug report.
+	if *showVersion || (flag.NArg() > 0 && flag.Arg(0) == "version") {
+		fmt.Println(versionString())
+		return
 	}
 
 	authLogger := initLogging()
@@ -322,6 +353,7 @@ func printHelp() {
 	fmt.Println("  set <option> <value>  Update a configuration option and save to tinyice.json")
 	fmt.Println("  reload                Trigger a hot configuration reload of the running server")
 	fmt.Println("  dump-config           Display the full configuration with syntax highlighting")
+	fmt.Println("  version               Display the version, commit and build platform")
 	fmt.Println("  help                  Display this help message")
 	fmt.Println("\nConfiguration Options (use with get/set):")
 	fmt.Println("  \033[36mBasic Settings:\033[0m")

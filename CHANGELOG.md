@@ -5,6 +5,83 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **`tinyice --version` / `tinyice version`.** Prints the version, short
+  commit, Go version and platform, before any config is loaded, so it
+  works on a half-configured install and gives bug reports something to
+  quote.
+
+- **Monitor player in the AutoDJ Studio.** A local `<audio>` bound to the
+  mount, so the operator can hear what listeners hear. `preload="none"`
+  — it doesn't open a listener connection until you press play.
+
+### Fixed
+
+- **`trusted_proxies` was ignored everywhere except OIDC login.** The
+  setting documents itself as governing "scan-detection, bans and audit
+  logging", but `clientIP()` had exactly one caller. Behind Caddy/nginx
+  the audit log, auth log, API-token last-used IP, listener and source
+  logs, the `source_connect` webhook, HLS/WHEP viewer tracking and the
+  listener geo map all recorded the reverse proxy's address.
+
+  Rate limiting and bans were worse than cosmetic: keyed on the proxy,
+  five bad logins from anyone locked out every client behind it, and a
+  per-client ban could never match again. Two matching bugs are fixed
+  too — exact `trusted_proxies` entries were compared as strings (so a
+  dual-stack listener reporting `::ffff:10.0.0.1` never matched a
+  configured `10.0.0.1`), and `X-Forwarded-For` entries carrying a port
+  were used verbatim as a map key.
+
+- **Browser "Go Live" always returned 401.** The page sent no credentials
+  at all while `/webrtc/source-offer` requires the mount's source
+  password, and the failure was only logged to the console. The endpoint
+  now also accepts an authenticated admin session or API token with
+  access to the mount (CSRF-protected), which is what the page uses, and
+  the page renders handshake failures instead of swallowing them.
+
+- **Pausing an AutoDJ made it unrecoverable.** `Streamer.Stop` cancelled
+  the streamer-lifetime context, ending the playback loop for good;
+  every transport stop went through it, so a later play only flipped a
+  flag nobody was listening for. Transport stop and teardown are now
+  separate operations. Pause also cancels the in-flight track, which it
+  previously didn't — the mount kept broadcasting until the file ended.
+
+- **AutoDJ page refetched twice a second, flashing "Loading...".** Both
+  admin AutoDJ pages subscribed to the public `/events` feed, which
+  emits no `autodj` event; the page compensated by refetching
+  `/api/autodj` on every `stream` event and toggling the full-page
+  loading state each time. They now use `/admin/events` and apply
+  events in place.
+
+- **Studio's transport reported the wrong state.** The `AutoDJEvent`
+  type described a payload the server never sent, so the handler threw
+  inside the SSE dispatcher's per-listener `try/catch` after assigning
+  the raw numeric state — leaving `state === 'playing'` permanently
+  false and the button stuck on Play. Playlist rows and the file
+  browser had the same class of key mismatch and rendered blank /
+  non-navigable.
+
+- **Studio endpoints that could never succeed.** `/playlist/remove`
+  treated the item id it was handed as an index (removing the wrong
+  track once ids and positions diverged); `/queue` and
+  `/playlist/playnext` demanded `mount` in the request body while the
+  path-based routes inject it as a query parameter, so every call 400'd.
+  `playnext` now really queues to the front.
+
+### Changed
+
+- **AutoDJ playlist and queue items are snake_case on the wire.**
+  `{"Title","Path","ID"}` became `{"title","path","id"}`, matching every
+  other field of the AutoDJ API. Affects `/api/autodj/{mount}/playlist`,
+  `/api/autodj/{mount}/queue`, and the `queue` / `playlist` arrays in the
+  `autodj` SSE event.
+
+- **`autodj` payloads gained `position` and `current_id`**, and
+  `playlist_pos` is now actually populated.
+
 ## [2.6.2] - 2026-05-13
 
 ### Added

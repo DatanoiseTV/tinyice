@@ -31,6 +31,13 @@ func (l *BannedListener) Accept() (net.Conn, error) {
 			return nil, err
 		}
 		remoteAddr := conn.RemoteAddr().String()
+		// A trusted reverse proxy carries every client's traffic, so
+		// dropping it at the TCP level would take the whole site down.
+		// Bans behind a proxy are enforced per-request in the handlers,
+		// where X-Forwarded-For is available.
+		if l.s.isTrustedProxy(remoteAddr) {
+			return conn, nil
+		}
 		if l.s.isBanned(remoteAddr) {
 			logger.L.Warnw("Dropping connection from banned IP at TCP level", "ip", remoteAddr)
 			conn.Close()

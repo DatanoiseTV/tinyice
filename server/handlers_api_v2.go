@@ -3,7 +3,6 @@ package server
 import (
 	"encoding/json"
 	"fmt"
-	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -44,11 +43,10 @@ func (s *Server) Audit(r *http.Request, action, resourceType, resourceID, detail
 	if user, ok := s.checkAuth(r); ok {
 		username = user.Username
 	}
-	ip := r.RemoteAddr
-	if host, _, err := net.SplitHostPort(ip); err == nil {
-		ip = host
-	}
-	s.Relay.History.RecordAudit(username, action, resourceType, resourceID, detail, ip)
+	// clientIP, not RemoteAddr: behind a reverse proxy every audit row
+	// would otherwise read as the proxy's address, which is what
+	// trusted_proxies exists to prevent.
+	s.Relay.History.RecordAudit(username, action, resourceType, resourceID, detail, s.clientIP(r))
 }
 
 func (s *Server) apiGetAuditLog(w http.ResponseWriter, r *http.Request) {
@@ -453,7 +451,9 @@ func (s *Server) apiGetAutoDJ(w http.ResponseWriter, r *http.Request) {
 		State          int                  `json:"state"`
 		CurrentSong    string               `json:"current_song"`
 		StartTime      int64                `json:"start_time"`
+		Position       float64              `json:"position"`
 		Duration       float64              `json:"duration"`
+		CurrentID      int                  `json:"current_id"`
 		PlaylistPos    int                  `json:"playlist_pos"`
 		PlaylistLen    int                  `json:"playlist_len"`
 		Shuffle        bool                 `json:"shuffle"`
@@ -510,8 +510,10 @@ func (s *Server) apiGetAutoDJ(w http.ResponseWriter, r *http.Request) {
 			info.State = int(stats.State)
 			info.CurrentSong = stats.CurrentSong
 			info.StartTime = stats.StartTime.Unix()
+			info.Position = trackPosition(stats)
 			info.Duration = stats.Duration.Seconds()
-			info.PlaylistPos = stats.PlaylistPos
+			info.CurrentID = stats.CurrentID
+			info.PlaylistPos = stats.CurrentPos
 			info.PlaylistLen = stats.PlaylistLen
 			info.Shuffle = stats.Shuffle
 			info.Loop = stats.Loop
@@ -839,7 +841,7 @@ func (s *Server) apiAutoDJPause(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, "Streamer not found", http.StatusNotFound)
 		return
 	}
-	streamer.Stop()
+	streamer.Pause()
 	jsonResponse(w, map[string]string{"status": "paused"})
 }
 
@@ -1106,9 +1108,9 @@ func (s *Server) apiRemoveFromPlaylist(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, "Forbidden", http.StatusForbidden)
 		return
 	}
-	idx := body.ID
-	if idx == 0 {
-		fmt.Sscanf(r.URL.Query().Get("id"), "%d", &idx)
+	id := body.ID
+	if id == 0 {
+		fmt.Sscanf(r.URL.Query().Get("id"), "%d", &id)
 	}
 
 	streamer := s.StreamerM.GetStreamer(mount)
@@ -1116,7 +1118,13 @@ func (s *Server) apiRemoveFromPlaylist(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, "Streamer not found", http.StatusNotFound)
 		return
 	}
-	streamer.RemoveFromPlaylist(idx)
+	// By ID, not index: the UI sends back the PlaylistItem.ID it was
+	// given, and treating that as an index removed the wrong track as
+	// soon as IDs and positions diverged (i.e. after any removal).
+	if !streamer.RemoveFromPlaylistByID(id) {
+		jsonError(w, "Playlist entry not found", http.StatusNotFound)
+		return
+	}
 
 	playlistCopy := streamer.GetPlaylist()
 	for _, adj := range s.Config.AutoDJs {
@@ -1251,33 +1259,66 @@ func (s *Server) apiAddToQueue(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Mount string `json:"mount"`
 		Path  string `json:"path"`
+		// ID queues an existing playlist entry (what the Studio's
+		// "play next" button sends); Path queues an arbitrary file
+		// from the music directory.
+		ID    int  `json:"id"`
+		Front bool `json:"front"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		jsonError(w, "Invalid request body", http.StatusBadRequest)
-		return
+	json.NewDecoder(r.Body).Decode(&body)
+
+	// The path-based routes (/api/autodj/{mount}/queue) inject the mount
+	// as a query parameter, so requiring it in the body made every call
+	// from the Studio fail with "Mount is required".
+	mount := body.Mount
+	if mount == "" {
+		mount = r.URL.Query().Get("mount")
 	}
-	if body.Mount == "" {
+	if mount == "" {
 		jsonError(w, "Mount is required", http.StatusBadRequest)
 		return
 	}
-	if !s.hasAccess(user, body.Mount) {
+	if !s.hasAccess(user, mount) {
 		jsonError(w, "Forbidden", http.StatusForbidden)
 		return
 	}
 
-	streamer := s.StreamerM.GetStreamer(body.Mount)
+	streamer := s.StreamerM.GetStreamer(mount)
 	if streamer == nil {
 		jsonError(w, "Streamer not found", http.StatusNotFound)
 		return
 	}
 
-	musicDir := streamer.GetMusicDir()
-	fullPath, err := s.validatePathInMusicDir(musicDir, body.Path)
-	if err != nil {
-		jsonError(w, "Forbidden", http.StatusForbidden)
+	fullPath := ""
+	if body.Path != "" {
+		p, err := s.validatePathInMusicDir(streamer.GetMusicDir(), body.Path)
+		if err != nil {
+			jsonError(w, "Forbidden", http.StatusForbidden)
+			return
+		}
+		fullPath = p
+	} else if body.ID != 0 {
+		p, ok := streamer.PathForPlaylistID(body.ID)
+		if !ok {
+			jsonError(w, "Playlist entry not found", http.StatusNotFound)
+			return
+		}
+		fullPath = p
+	} else {
+		jsonError(w, "Either path or id is required", http.StatusBadRequest)
 		return
 	}
-	streamer.PushToQueue(fullPath)
+
+	// The /playlist/playnext route signals front-of-queue via the query
+	// string, since it has no control over the caller's JSON body.
+	if r.URL.Query().Get("front") == "true" {
+		body.Front = true
+	}
+	if body.Front {
+		streamer.PushToQueueFront(fullPath)
+	} else {
+		streamer.PushToQueue(fullPath)
+	}
 	jsonResponse(w, map[string]string{"status": "ok"})
 }
 

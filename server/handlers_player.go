@@ -697,7 +697,10 @@ func (s *Server) handleToggleAutoDJ(w http.ResponseWriter, r *http.Request) {
 						streamer.Play()
 					}
 				} else {
-					existing.Play()
+					// ResumeStreamer, not Play: StopStreamer closed the
+					// MPD listener to release the port, so a bare Play
+					// would come back without MPD control.
+					s.StreamerM.ResumeStreamer(mount)
 				}
 			} else {
 				s.StreamerM.StopStreamer(mount)

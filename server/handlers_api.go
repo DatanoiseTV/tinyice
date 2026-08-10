@@ -68,13 +68,39 @@ type streamerEventInfo struct {
 	State       int                  `json:"state"`
 	CurrentSong string               `json:"song"`
 	StartTime   int64                `json:"start_time"`
+	// Position is seconds elapsed in the current track, computed
+	// server-side. The UI can't derive it from start_time without
+	// trusting the browser clock to agree with ours.
+	Position    float64              `json:"position"`
 	Duration    float64              `json:"duration"`
+	// CurrentID is the playlist id of the track actually playing, so a
+	// UI can highlight the right row. -1 when the track came from the
+	// queue or an external song command.
+	CurrentID   int                  `json:"current_id"`
 	PlaylistPos int                  `json:"playlist_pos"`
 	PlaylistLen int                  `json:"playlist_len"`
 	Shuffle     bool                 `json:"shuffle"`
 	Loop        bool                 `json:"loop"`
 	Queue       []relay.PlaylistItem `json:"queue"`
 	Playlist    []relay.PlaylistItem `json:"playlist"`
+}
+
+// trackPosition returns how far into the current track the AutoDJ is, in
+// seconds. Zero unless a track is actually playing — a paused or stopped
+// streamer would otherwise report an ever-growing position derived from
+// the last track's start time.
+func trackPosition(stats relay.StreamerStats) float64 {
+	if stats.State != relay.StatePlaying || stats.StartTime.IsZero() {
+		return 0
+	}
+	elapsed := time.Since(stats.StartTime).Seconds()
+	if elapsed < 0 {
+		return 0
+	}
+	if d := stats.Duration.Seconds(); d > 0 && elapsed > d {
+		return d
+	}
+	return elapsed
 }
 
 func (s *Server) collectStatsPayload(user *config.User) ([]byte, error) {
@@ -168,7 +194,10 @@ func (s *Server) collectStatsPayload(user *config.User) ([]byte, error) {
 				State:       int(stats.State),
 				CurrentSong: stats.CurrentSong,
 				StartTime:   stats.StartTime.Unix(),
+				Position:    trackPosition(stats),
 				Duration:    stats.Duration.Seconds(),
+				CurrentID:   stats.CurrentID,
+				PlaylistPos: stats.CurrentPos,
 				PlaylistLen: stats.PlaylistLen,
 				Shuffle:     stats.Shuffle,
 				Loop:        stats.Loop,
@@ -734,27 +763,58 @@ func (s *Server) handleWebRTCSourceOffer(w http.ResponseWriter, r *http.Request)
 	// any mount's broadcast — pion happily ingests whatever audio they
 	// send, and tinyice broadcasts it to the radio's listeners.
 	//
-	// Accept the credentials via either Basic auth (matches handleSource)
-	// or a `password` query parameter for browser callers that can't
-	// always send Basic on a fetch().
-	host, _, _ := net.SplitHostPort(r.RemoteAddr)
+	// Two credentials are accepted:
+	//
+	//  1. The per-mount source password, via Basic auth (matches
+	//     handleSource) or a `password` query parameter — this is what
+	//     scripted publishers use.
+	//
+	//  2. A logged-in admin session or API token that has access to the
+	//     mount. The "Go Live" page is already behind admin auth, and
+	//     asking the operator to re-type (or put in the URL) a password
+	//     the server already knows is why browser broadcasting never
+	//     worked. Session auth additionally requires the CSRF token, so
+	//     a third-party page can't start a broadcast with the operator's
+	//     cookie.
+	host := s.clientIP(r)
 	if err := s.checkAuthLimit(host); err != nil {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
-	requiredPass, found := s.getSourcePassword(mount)
-	if !found {
-		requiredPass = s.Config.DefaultSourcePassword
-	}
+
 	supplied := ""
 	if _, p, ok := r.BasicAuth(); ok {
 		supplied = p
 	} else if q := r.URL.Query().Get("password"); q != "" {
 		supplied = q
 	}
-	if requiredPass == "" || !config.CheckPasswordHash(supplied, requiredPass) {
+
+	authorized := false
+	if supplied != "" {
+		requiredPass, found := s.getSourcePassword(mount)
+		if !found {
+			requiredPass = s.Config.DefaultSourcePassword
+		}
+		authorized = requiredPass != "" && config.CheckPasswordHash(supplied, requiredPass)
+	} else if user, ok := s.checkAuth(r); ok {
+		// Only reached when no source password was offered, so the
+		// Basic-auth branch of checkAuth can't burn a rate-limit slot
+		// on a publisher that authenticated the other way.
+		if !s.isCSRFSafe(r) {
+			http.Error(w, "Forbidden", http.StatusForbidden)
+			return
+		}
+		if !s.hasAccess(user, mount) {
+			s.logAuthFailed(user.Username, host, "no access to mount "+mount)
+			http.Error(w, "Forbidden", http.StatusForbidden)
+			return
+		}
+		authorized = true
+	}
+
+	if !authorized {
 		s.recordAuthFailure(host)
-		s.logAuthFailed("webrtc-source", r.RemoteAddr, "invalid source password")
+		s.logAuthFailed("webrtc-source", host, "invalid source password")
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}

@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/DatanoiseTV/tinyice/logger"
@@ -25,6 +26,10 @@ type MPDServer struct {
 	Port     string
 	Password string
 	streamer *Streamer
+
+	// mu guards listener, which Start/Stop swap as an AutoDJ is
+	// disabled and re-enabled (ResumeStreamer).
+	mu       sync.Mutex
 	listener net.Listener
 }
 
@@ -61,7 +66,16 @@ func NewMPDServer(port, password string, s *Streamer) *MPDServer {
 	}
 }
 
+// Start binds the MPD port and serves connections until Stop. Calling it
+// on an already-listening server is a no-op rather than an error, so a
+// re-enable path can call it unconditionally.
 func (m *MPDServer) Start() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.listener != nil {
+		return nil
+	}
+
 	addr := m.Port
 	if !strings.Contains(addr, ":") {
 		addr = ":" + addr
@@ -88,8 +102,11 @@ func (m *MPDServer) Start() error {
 
 func (m *MPDServer) Stop() {
 	logger.L.Debugf("MPD: Stopping server on port %s", m.Port)
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.listener != nil {
 		m.listener.Close()
+		m.listener = nil
 	}
 }
 

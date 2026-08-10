@@ -1500,6 +1500,13 @@ paths:
         Exchange SDP to broadcast audio via WebRTC. The browser captures audio
         (e.g. via `getUserMedia`), creates an offer, and sends it here.
         The server responds with an SDP answer to complete the connection.
+
+        Authentication (one of):
+
+        * The mount's source password, sent as HTTP Basic auth or as a
+          `password` query parameter. Use this for scripted publishers.
+        * A logged-in admin session (or API token) with access to the mount.
+          Session callers must also send the `X-CSRF-Token` header.
       requestBody:
         required: true
         content:

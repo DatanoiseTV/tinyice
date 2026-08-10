@@ -1,0 +1,1 @@
+import{u as i}from"./hooks.module-BvhzplSY.js";function s({bars:n=5}){return i("div",{class:"flex gap-[2px] h-4 items-end",children:Array.from({length:n},(t,e)=>i("div",{class:"w-[3px] rounded-sm bg-accent origin-bottom",style:{animation:`eq-bar 0.5s ease-in-out ${e*.08}s infinite`,height:"100%"}},e))})}export{s as E};
