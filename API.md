@@ -223,6 +223,8 @@ Returns real-time server statistics every 500ms.
       "song": "Artist - Track",
       "start_time": 1700000000,
       "duration": 180.5,
+      "position": 42.5,
+      "current_id": 6,
       "playlist_pos": 5,
       "playlist_len": 100,
       "shuffle": false,
@@ -241,6 +243,16 @@ Returns real-time server statistics every 500ms.
   "server_uptime": "24h0m0s"
 }
 ```
+
+`state` is `0` stopped, `1` playing, `2` paused. `position` is seconds
+elapsed in the current track (0 unless playing) and `duration` is `0` when
+the input format doesn't expose a track length up-front. `current_id` is
+the id of the track actually playing, `-1` when it came from the queue or
+an external song command. `queue` and `playlist` entries are
+`{"title": …, "path": …, "id": …}`.
+
+Note that `autodj` events are only emitted on the authenticated
+`/admin/events` feed, not on the public `/events` one.
 
 ### `/events` (Public SSE)
 
