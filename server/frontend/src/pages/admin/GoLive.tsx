@@ -18,10 +18,16 @@ const headroomL = signal(-Infinity)
 const headroomR = signal(-Infinity)
 const peakL = signal(0)
 const peakR = signal(0)
+const errorMsg = signal('')
 
 function getMounts(): string[] {
   const data = window.__TINYICE__ as AdminData | undefined
   return data?.mounts ?? ['/live']
+}
+
+function getCSRFToken(): string {
+  const data = window.__TINYICE__ as AdminData | undefined
+  return data?.csrfToken ?? ''
 }
 
 function formatDuration(sec: number): string {
@@ -142,6 +148,7 @@ export function GoLive() {
 
   const startBroadcast = useCallback(async () => {
     try {
+      errorMsg.value = ''
       status.value = 'connecting'
 
       // Capture mic
@@ -203,7 +210,12 @@ export function GoLive() {
           pc.connectionState === 'failed' ||
           pc.connectionState === 'closed'
         ) {
+          const failed = pc.connectionState === 'failed'
           stopBroadcast()
+          if (failed) {
+            errorMsg.value =
+              'WebRTC connection failed. Check that UDP traffic to the server is not blocked by a firewall.'
+          }
         }
       }
 
@@ -215,18 +227,31 @@ export function GoLive() {
       await pc.setLocalDescription(offer)
 
       const mount = selectedMount.value
+      // The session cookie authenticates us as an admin with access to
+      // this mount; X-CSRF-Token is what stops a third-party page from
+      // starting a broadcast with that cookie. Without both, the server
+      // falls back to demanding the mount's source password.
       const res = await fetch(
         `/webrtc/source-offer?mount=${encodeURIComponent(mount)}`,
         {
           method: 'POST',
           body: JSON.stringify(pc.localDescription),
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-Token': getCSRFToken(),
+          },
+          credentials: 'same-origin',
         }
       )
 
       if (!res.ok) {
-        const errText = await res.text()
-        throw new Error(`WebRTC handshake failed: ${errText}`)
+        const errText = (await res.text()).trim()
+        if (res.status === 401 || res.status === 403) {
+          throw new Error(
+            `Not authorised to broadcast to ${mount}. Check that your account has access to this mount, then reload the page (your session may have expired).`
+          )
+        }
+        throw new Error(errText || `Broadcast handshake failed (HTTP ${res.status})`)
       }
 
       const answer = await res.json()
@@ -316,8 +341,13 @@ export function GoLive() {
         }
       }, 1000)
     } catch (err) {
+      // Surface the failure. Previously this was console-only, so a
+      // rejected handshake looked identical to "the button does
+      // nothing" — the button snapped back to GO LIVE with no clue why.
       console.error('GoLive error:', err)
+      const msg = err instanceof Error ? err.message : String(err)
       stopBroadcast()
+      errorMsg.value = msg
     }
   }, [stopBroadcast])
 
@@ -362,6 +392,26 @@ export function GoLive() {
           {isLive ? 'LIVE' : isConnecting ? 'CONNECTING' : 'READY'}
         </span>
       </div>
+
+      {/* Error banner */}
+      {errorMsg.value && (
+        <div
+          role="alert"
+          class="mb-6 flex items-start gap-3 rounded-lg border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger"
+        >
+          <svg class="w-4 h-4 mt-0.5 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
+          </svg>
+          <span class="flex-1">{errorMsg.value}</span>
+          <button
+            onClick={() => { errorMsg.value = '' }}
+            class="font-mono text-[10px] tracking-widest uppercase opacity-70 hover:opacity-100"
+            aria-label="Dismiss error"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {/* Mount selector */}
       <div class="space-y-4 mb-6">

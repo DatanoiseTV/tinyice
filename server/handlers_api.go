@@ -734,27 +734,58 @@ func (s *Server) handleWebRTCSourceOffer(w http.ResponseWriter, r *http.Request)
 	// any mount's broadcast — pion happily ingests whatever audio they
 	// send, and tinyice broadcasts it to the radio's listeners.
 	//
-	// Accept the credentials via either Basic auth (matches handleSource)
-	// or a `password` query parameter for browser callers that can't
-	// always send Basic on a fetch().
-	host, _, _ := net.SplitHostPort(r.RemoteAddr)
+	// Two credentials are accepted:
+	//
+	//  1. The per-mount source password, via Basic auth (matches
+	//     handleSource) or a `password` query parameter — this is what
+	//     scripted publishers use.
+	//
+	//  2. A logged-in admin session or API token that has access to the
+	//     mount. The "Go Live" page is already behind admin auth, and
+	//     asking the operator to re-type (or put in the URL) a password
+	//     the server already knows is why browser broadcasting never
+	//     worked. Session auth additionally requires the CSRF token, so
+	//     a third-party page can't start a broadcast with the operator's
+	//     cookie.
+	host := s.clientIP(r)
 	if err := s.checkAuthLimit(host); err != nil {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
-	requiredPass, found := s.getSourcePassword(mount)
-	if !found {
-		requiredPass = s.Config.DefaultSourcePassword
-	}
+
 	supplied := ""
 	if _, p, ok := r.BasicAuth(); ok {
 		supplied = p
 	} else if q := r.URL.Query().Get("password"); q != "" {
 		supplied = q
 	}
-	if requiredPass == "" || !config.CheckPasswordHash(supplied, requiredPass) {
+
+	authorized := false
+	if supplied != "" {
+		requiredPass, found := s.getSourcePassword(mount)
+		if !found {
+			requiredPass = s.Config.DefaultSourcePassword
+		}
+		authorized = requiredPass != "" && config.CheckPasswordHash(supplied, requiredPass)
+	} else if user, ok := s.checkAuth(r); ok {
+		// Only reached when no source password was offered, so the
+		// Basic-auth branch of checkAuth can't burn a rate-limit slot
+		// on a publisher that authenticated the other way.
+		if !s.isCSRFSafe(r) {
+			http.Error(w, "Forbidden", http.StatusForbidden)
+			return
+		}
+		if !s.hasAccess(user, mount) {
+			s.logAuthFailed(user.Username, host, "no access to mount "+mount)
+			http.Error(w, "Forbidden", http.StatusForbidden)
+			return
+		}
+		authorized = true
+	}
+
+	if !authorized {
 		s.recordAuthFailure(host)
-		s.logAuthFailed("webrtc-source", r.RemoteAddr, "invalid source password")
+		s.logAuthFailed("webrtc-source", host, "invalid source password")
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}

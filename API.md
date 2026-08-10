@@ -169,6 +169,12 @@ http://localhost:8080
 | `/webrtc/offer` | POST | `mount` (query), body: WebRTC SDP offer | Listener WebRTC stream |
 | `/webrtc/source-offer` | POST | `mount` (query), body: WebRTC SDP offer | Source WebRTC connection |
 
+`/webrtc/source-offer` is an ingest endpoint and requires credentials. Send
+either the mount's source password (HTTP Basic auth, or a `password` query
+parameter) or an authenticated admin session / API token that has access to
+the mount. Session callers must also send the `X-CSRF-Token` header — this is
+what the admin **Go Live** page does, so no source password is needed there.
+
 ## Server-Sent Events (SSE)
 
 ### `/admin/events` (Authenticated SSE)
