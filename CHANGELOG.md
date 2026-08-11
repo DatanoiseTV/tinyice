@@ -28,6 +28,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the page. The meters now write to the DOM through refs, as the bars and
   peak markers already did.
 
+### Changed
+
+- **Dependencies updated** (the three open Dependabot PRs, rolled up):
+  pion/webrtc 4.2.12 → 4.2.16 and its ice/dtls/srtp/sctp/stun/turn
+  stack, coreos/go-oidc 3.18 → 3.20, go-webauthn 0.17.3 → 0.17.4,
+  wneessen/go-mail 0.7.3 → 0.8.1, gorm 1.31.1 → 1.31.2, x/crypto
+  0.51 → 0.54 plus x/sys, x/net and x/text; actions/checkout, setup-go
+  and setup-node v6 → v7; alpine 3.23 → 3.24 in the runtime image.
+
 ## [2.7.0] - 2026-08-10
 
 ### Added
