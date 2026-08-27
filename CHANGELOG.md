@@ -37,6 +37,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   0.51 → 0.54 plus x/sys, x/net and x/text; actions/checkout, setup-go
   and setup-node v6 → v7; alpine 3.23 → 3.24 in the runtime image.
 
+## [Unreleased]
+
+### Fixed
+
+- **Icecast sources behind an HTTP reverse proxy** (#58). A source that
+  frames its body properly (chunked, or a length) is now read through
+  `r.Body` instead of the raw hijacked socket. Hijacking a framed request
+  broadcast the chunk headers to listeners as if they were audio — a
+  stream would begin `d08\r\n` instead of an MP3 frame sync. Direct
+  encoders, which send no framing at all, keep the hijack path unchanged.
+
+  A source that connects and then sends nothing for 10 s now logs a
+  warning naming the likely cause. The classic Icecast source protocol
+  has no `Content-Length` and no `Transfer-Encoding`, so an HTTP reverse
+  proxy sees a bodiless request and forwards no body; that case cannot be
+  rescued server-side, but it no longer looks like an unexplained dead
+  mount. Point the encoder at TinyIce directly (it terminates TLS itself)
+  or proxy that port at TCP/stream level.
+
+- **The player's volume control was unreachable** (#53). The audio layout
+  reserved no space for its own fixed bottom strip, so on shorter
+  viewports the controls sat underneath it and the strip — being above
+  them — swallowed every click and drag. `overflow-hidden` meant they
+  could not be scrolled to either.
+
+  The speaker icon is now a real mute toggle (it was decorative), the
+  slider responds to touch drags and to arrow/Home/End keys, and it
+  reports whole percentages instead of `74.59677419354838`.
+
+- **AutoDJ pause then play skipped a track** (#54, a regression in
+  2.7.0). Pause cancelled the current track, so resuming could only start
+  the next one. It now suspends the encoder's reads and resumes the same
+  file where it stopped. Reported position no longer counts paused time
+  as playback progress.
+
+- **A playing AutoDJ showed as offline in Streams** (#56). The status dot
+  keys off the mount's source descriptor, which every ingest sets except
+  the AutoDJ; it now identifies itself as `autodj` while playing and
+  releases the mount when stopped.
+
+### Changed
+
+- **`/admin/events` is roughly 40x smaller** (#55). The `autodj` event
+  carried the entire playlist array on every tick — twice, counting the
+  legacy unnamed frame — which on a 200-track AutoDJ was ~99% of all
+  bytes on the feed (measured 126 KB/s, now 2.9 KB/s). It now sends
+  `playlist_version`; clients refetch `/api/autodj/{mount}/playlist` when
+  that number changes, which also picks up edits made elsewhere.
+
 ## [2.7.0] - 2026-08-10
 
 ### Added

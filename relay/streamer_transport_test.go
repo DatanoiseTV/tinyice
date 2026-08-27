@@ -131,3 +131,104 @@ func TestStreamerLoopResumesAfterPause(t *testing.T) {
 	s.Play()
 	waitForDrain("after resuming from stop")
 }
+
+// countingReader yields an endless deterministic byte sequence and records
+// how much has been consumed, so a test can tell whether a pause resumed
+// in place or skipped ahead.
+type countingReader struct {
+	next byte
+	n    int
+}
+
+func (r *countingReader) Read(p []byte) (int, error) {
+	for i := range p {
+		p[i] = r.next
+		r.next++
+	}
+	r.n += len(p)
+	return len(p), nil
+}
+
+// The whole point of #54: pausing must not lose the caller's place in the
+// track. The gate blocks reads while paused and the underlying reader is
+// untouched, so the byte after the pause is the byte that followed the
+// last one read before it.
+func TestPauseGateResumesInPlace(t *testing.T) {
+	s, _ := newTestStreamer(t)
+	s.Play()
+	src := &countingReader{}
+	g := newPauseGate(context.Background(), s, src)
+
+	before := make([]byte, 8)
+	if _, err := g.Read(before); err != nil {
+		t.Fatalf("read before pause: %v", err)
+	}
+
+	s.Pause()
+
+	// While paused, Read must block rather than return data.
+	done := make(chan []byte, 1)
+	go func() {
+		b := make([]byte, 8)
+		if _, err := g.Read(b); err == nil {
+			done <- b
+		}
+	}()
+	select {
+	case <-done:
+		t.Fatal("pauseGate returned data while paused")
+	case <-time.After(300 * time.Millisecond):
+	}
+
+	consumedWhilePaused := src.n
+	if consumedWhilePaused != len(before) {
+		t.Errorf("decoder advanced while paused: consumed %d bytes, want %d",
+			consumedWhilePaused, len(before))
+	}
+
+	s.Play()
+
+	select {
+	case after := <-done:
+		// Resumed in place: the sequence continues with no gap.
+		if after[0] != before[len(before)-1]+1 {
+			t.Errorf("resumed at byte %d, want %d — the pause skipped data",
+				after[0], before[len(before)-1]+1)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("pauseGate did not resume after Play")
+	}
+
+	// And the paused time is recorded so the encoder's pacing can
+	// discount it instead of racing to catch up.
+	if p := g.PausedTotal(); p < 200*time.Millisecond {
+		t.Errorf("PausedTotal = %v, want at least the ~300ms spent paused", p)
+	}
+}
+
+// Pause must leave the track's context alive; cancelling it is what made
+// Play() start the next track instead of resuming.
+func TestPauseDoesNotCancelTrack(t *testing.T) {
+	s, _ := newTestStreamer(t)
+	fileCtx, fileCancel := context.WithCancel(context.Background())
+	defer fileCancel()
+	s.mu.Lock()
+	s.fileCancel = fileCancel
+	s.mu.Unlock()
+
+	s.Play()
+	s.Pause()
+
+	if fileCtx.Err() != nil {
+		t.Errorf("Pause cancelled the in-flight track: %v", fileCtx.Err())
+	}
+	if got := s.GetStats().State; got != StatePaused {
+		t.Errorf("state = %v, want StatePaused", got)
+	}
+
+	// Stop, by contrast, ends the current track.
+	s.Stop()
+	if fileCtx.Err() == nil {
+		t.Error("Stop did not cancel the in-flight track")
+	}
+}

@@ -404,7 +404,7 @@ func EncodeMP3(ctx context.Context, relay *Relay, output *Stream, decoder io.Rea
 
 			if pace {
 				totalSamples += int64(n / 4) // 2 channels, 2 bytes per sample
-				elapsed := time.Since(startTime)
+				elapsed := activeElapsed(startTime, decoder)
 				expected := time.Duration(totalSamples) * time.Second / time.Duration(sampleRate)
 				if expected > elapsed {
 					time.Sleep(expected - elapsed)
@@ -513,7 +513,7 @@ func EncodeOpus(ctx context.Context, relay *Relay, output *Stream, decoder io.Re
 
 			if pace {
 				sentCount++
-				elapsed := time.Since(startTime)
+				elapsed := activeElapsed(startTime, decoder)
 				expected := time.Duration(sentCount*int64(frameMS)) * time.Millisecond
 				if expected > elapsed {
 					time.Sleep(expected - elapsed)
@@ -521,6 +521,30 @@ func EncodeOpus(ctx context.Context, relay *Relay, output *Stream, decoder io.Re
 			}
 		}
 	}
+}
+
+// pauseAware is implemented by readers that can block for a while by
+// design (the AutoDJ's pauseGate). The encoders pace output against
+// wall-clock time since the track started; without subtracting the time
+// spent paused they would think they were behind schedule on resume and
+// flush the rest of the file into the ring buffer at full speed.
+type pauseAware interface {
+	PausedTotal() time.Duration
+}
+
+// activeElapsed is wall-clock time since start, minus any time the reader
+// reports having spent paused.
+func activeElapsed(start time.Time, r io.Reader) time.Duration {
+	elapsed := time.Since(start)
+	if pa, ok := r.(pauseAware); ok {
+		if paused := pa.PausedTotal(); paused > 0 {
+			elapsed -= paused
+		}
+	}
+	if elapsed < 0 {
+		return 0
+	}
+	return elapsed
 }
 
 type streamWriter struct {
@@ -534,6 +558,16 @@ type streamWriter struct {
 func (w *streamWriter) Write(p []byte) (n int, err error) {
 	if w.capture {
 		w.headerBuf.Write(p)
+	}
+	// Follow the mount if the Stream object was replaced under us. The
+	// health monitor removes a mount that has gone silent (e.g. a long
+	// AutoDJ pause) and the next write recreates it; without this we
+	// would keep broadcasting into the orphaned object and every
+	// listener on the live mount would hear nothing.
+	if w.relay != nil && w.stream != nil {
+		if cur, ok := w.relay.GetStream(w.stream.MountName); ok && cur != w.stream {
+			w.stream = cur
+		}
 	}
 	w.stream.Broadcast(p, w.relay)
 	if w.stats != nil {

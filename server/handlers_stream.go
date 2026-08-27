@@ -104,6 +104,19 @@ func (s *Server) handlePlaylist(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "#EXTM3U\n#EXTINF:-1,%s\n%s%s\n", st.Name, baseURL, mount)
 }
 
+// sourceHasFramedBody reports whether the request carries a body that
+// net/http can frame and decode on its own. Classic Icecast source
+// clients send neither Content-Length nor Transfer-Encoding (ContentLength
+// == 0, empty TransferEncoding); anything else — a length, or chunked,
+// which is what a reverse proxy produces — can and must be read via
+// r.Body so the framing is stripped.
+func sourceHasFramedBody(r *http.Request) bool {
+	if len(r.TransferEncoding) > 0 {
+		return true
+	}
+	return r.ContentLength != 0
+}
+
 func (s *Server) handleSource(w http.ResponseWriter, r *http.Request) {
 	clientIP := s.clientIP(r)
 	if s.isBanned(clientIP) {
@@ -158,20 +171,9 @@ func (s *Server) handleSource(w http.ResponseWriter, r *http.Request) {
 	}
 	defer stream.ReleaseSource()
 
-	hj, ok := w.(http.Hijacker)
-	if !ok {
-		http.Error(w, "Hijacking unsupported", http.StatusInternalServerError)
-		return
-	}
-	conn, bufrw, err := hj.Hijack()
-	if err != nil {
-		logger.L.Errorf("Hijack failed: %v", err)
-		return
-	}
-	defer conn.Close()
 	// Per-read deadline on the source. Without it, a source that
 	// silently drops (network blip, encoder crash without FIN)
-	// holds the handler goroutine in bufrw.Read forever; the stream
+	// holds the handler goroutine in Read forever; the stream
 	// stays mounted, transcoders keep their input subscription, and
 	// the next reconnect from the same encoder leaves zombies. The
 	// deadline is refreshed after every successful read so a
@@ -179,8 +181,54 @@ func (s *Server) handleSource(w http.ResponseWriter, r *http.Request) {
 	// genuinely silent connections die.
 	const sourceReadTimeout = 60 * time.Second
 
-	bufrw.WriteString("HTTP/1.0 200 OK\r\nServer: Icecast 2.4.4\r\nConnection: Keep-Alive\r\n\r\n")
-	bufrw.Flush()
+	// How the body is read depends on how the client framed it.
+	//
+	// A classic Icecast source (BUTT, darkice, ices) sends SOURCE/PUT with
+	// neither Content-Length nor Transfer-Encoding and then streams audio
+	// forever. That is not valid HTTP/1.1 framing, so net/http hands us an
+	// empty r.Body — hence the hijack, which reads the raw socket.
+	//
+	// But when the client is framing correctly (chunked, or a length),
+	// hijacking is wrong: the raw socket then still carries the chunk
+	// headers, and they get broadcast to listeners as if they were audio
+	// (we measured "d08\r\n" landing in the middle of an MP3 stream).
+	// That is exactly what a reverse proxy in front of us produces, since
+	// it re-frames the request before forwarding. In that case let
+	// net/http do the de-chunking and read r.Body.
+	var src io.Reader
+	var setReadDeadline func(time.Time) error
+
+	if sourceHasFramedBody(r) {
+		// NOTE: deliberately no Flush here. Flushing the response
+		// before the request body has been read blocks in net/http
+		// until the client goes away (measured: ~7 s, i.e. the client's
+		// whole lifetime), which starved the ingest completely. The
+		// header goes out with the first write / on return; a client
+		// that framed its body is already streaming and is not waiting
+		// on our 200.
+		w.Header().Set("Server", "Icecast 2.4.4")
+		w.WriteHeader(http.StatusOK)
+		rc := http.NewResponseController(w)
+		src = r.Body
+		setReadDeadline = rc.SetReadDeadline
+		defer r.Body.Close()
+	} else {
+		hj, ok := w.(http.Hijacker)
+		if !ok {
+			http.Error(w, "Hijacking unsupported", http.StatusInternalServerError)
+			return
+		}
+		conn, bufrw, err := hj.Hijack()
+		if err != nil {
+			logger.L.Errorf("Hijack failed: %v", err)
+			return
+		}
+		defer conn.Close()
+		bufrw.WriteString("HTTP/1.0 200 OK\r\nServer: Icecast 2.4.4\r\nConnection: Keep-Alive\r\n\r\n")
+		bufrw.Flush()
+		src = bufrw
+		setReadDeadline = conn.SetReadDeadline
+	}
 
 	logger.L.Infow("Source connected", "mount", mount, "ip", clientIP, "ua", r.Header.Get("User-Agent"))
 	s.dispatchWebhook("source_connect", map[string]interface{}{
@@ -200,10 +248,43 @@ func (s *Server) handleSource(w http.ResponseWriter, r *http.Request) {
 	captureStartOffset := stream.Buffer.HeadOffset()
 
 	buf := make([]byte, 8192)
+	var totalIn atomic.Int64
+
+	// Zero-data watchdog. A source that authenticates and then delivers
+	// nothing is nearly always an HTTP reverse proxy in front of us: the
+	// classic Icecast source protocol sends neither Content-Length nor
+	// Transfer-Encoding, so the proxy sees a bodiless request, forwards
+	// no body, and the audio never leaves the proxy. Waiting for the
+	// read deadline to surface that takes a minute, by which time most
+	// encoders have already reconnected — so say it while the operator
+	// is still looking.
+	watchdogDone := make(chan struct{})
+	defer close(watchdogDone)
+	go func() {
+		select {
+		case <-watchdogDone:
+			return
+		case <-time.After(10 * time.Second):
+		}
+		if totalIn.Load() > 0 {
+			return
+		}
+		logger.L.Warnw("Source connected but has sent no audio after 10s",
+			"mount", mount,
+			"ip", clientIP,
+			"ua", r.Header.Get("User-Agent"),
+			"framed_body", sourceHasFramedBody(r),
+			"hint", "if this encoder reaches TinyIce through an HTTP reverse proxy (Caddy/nginx), the proxy drops the body of a classic Icecast SOURCE request — point the encoder straight at TinyIce (it can terminate TLS itself) or proxy the port at TCP/stream level instead of HTTP",
+		)
+	}()
+
 	for {
-		_ = conn.SetReadDeadline(time.Now().Add(sourceReadTimeout))
-		n, err := bufrw.Read(buf)
+		if setReadDeadline != nil {
+			_ = setReadDeadline(time.Now().Add(sourceReadTimeout))
+		}
+		n, err := src.Read(buf)
 		if n > 0 {
+			totalIn.Add(int64(n))
 			stream.Broadcast(buf[:n], s.Relay)
 			if captureHeaders {
 				headerBuf = append(headerBuf, buf[:n]...)
@@ -229,7 +310,13 @@ func (s *Server) handleSource(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 	}
-	logger.L.Infow("Source disconnected", "mount", mount)
+	// A source that connected, authenticated and then delivered nothing
+	// is almost always an HTTP reverse proxy in front of us: the classic
+	// Icecast source protocol has no Content-Length and no chunked
+	// encoding, so the proxy sees a request with no body, forwards none,
+	// and the audio never leaves the proxy. The operator otherwise just
+	// sees the mount go "degraded" then "dead" with no explanation.
+	logger.L.Infow("Source disconnected", "mount", mount, "bytes_in", totalIn.Load())
 	s.dispatchWebhook("source_disconnect", map[string]interface{}{
 		"mount": mount,
 	})

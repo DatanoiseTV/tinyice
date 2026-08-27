@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/DatanoiseTV/tinyice/config"
@@ -26,6 +27,12 @@ const (
 	StatePlaying
 	StatePaused
 )
+
+// autoDJSourceLabel identifies an AutoDJ as a mount's source, the same way
+// the relay client uses "relay-pull" and WebRTC ingest uses
+// "webrtc-source". Stream.SourceIP is a source descriptor, not strictly an
+// address.
+const autoDJSourceLabel = "autodj"
 
 type Streamer struct {
 	Name           string
@@ -71,6 +78,10 @@ type Streamer struct {
 	CurrentChannels     int
 	CurrentFileTime     time.Time
 	CurrentFileDuration time.Duration
+	// CurrentPausedNanos is how long the current track has spent paused,
+	// so reported position stays honest instead of counting paused
+	// wall-clock as playback progress.
+	CurrentPausedNanos atomic.Int64
 	MPDServer           *MPDServer
 	NextID              int
 	PlaylistVersion     uint32
@@ -181,13 +192,9 @@ func (s *Streamer) TogglePlay() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.State == StatePlaying {
+		// Suspend mid-track (pauseGate stops the encoder reading);
+		// don't cancel, so unpausing resumes the same file.
 		s.State = StatePaused
-		// Cut the track that's mid-encode. Without this, "pause" only
-		// took effect when the current file happened to end, so the
-		// mount kept broadcasting for up to a full track.
-		if s.fileCancel != nil {
-			s.fileCancel()
-		}
 	} else {
 		s.State = StatePlaying
 	}
@@ -236,16 +243,17 @@ func (s *Streamer) Stop() {
 	s.signalStateChange()
 }
 
-// Pause halts playback and reports StatePaused. Resuming with Play()
-// continues with the next track — a live mount has no seekable backlog,
-// so there is nothing to resume mid-file.
+// Pause suspends playback mid-track and reports StatePaused. The track
+// is NOT cancelled: pauseGate blocks the encoder's reads, so Play()
+// resumes the same file exactly where it stopped. Cancelling here is what
+// made the Studio's Play button skip to the next track (#54).
+//
+// Note the mount goes silent for the duration — this is a live stream
+// with no backlog, so listeners hear the gap.
 func (s *Streamer) Pause() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.State = StatePaused
-	if s.fileCancel != nil {
-		s.fileCancel()
-	}
 	s.signalStateChange()
 }
 
@@ -793,6 +801,12 @@ type StreamerStats struct {
 	CurrentPos     int
 	PlaylistPos    int
 	PlaylistLen    int
+	// PlaylistVersion bumps on every playlist mutation. Clients watch it
+	// to know when to refetch the playlist, so the live event feed
+	// doesn't have to carry the whole array on every tick.
+	PlaylistVersion uint32
+	// PausedFor is how long the current track has been paused.
+	PausedFor      time.Duration
 	Shuffle        bool
 	MPDPort        string
 	MPDPassword    string
@@ -822,8 +836,10 @@ func (s *Streamer) GetStats() StreamerStats {
 		StartTime:      s.CurrentFileTime,
 		Duration:       s.CurrentFileDuration,
 		CurrentID:      s.CurrentPlayingID,
-		CurrentPos:     s.CurrentPlayingPos,
-		PlaylistPos:    s.CurrentPos,
+		CurrentPos:      s.CurrentPlayingPos,
+		PlaylistPos:     s.CurrentPos,
+		PlaylistVersion: s.PlaylistVersion,
+		PausedFor:       time.Duration(s.CurrentPausedNanos.Load()),
 		PlaylistLen:    len(s.Playlist),
 		Shuffle:        s.Shuffle,
 		MPDPort:        mpdPort,
@@ -1011,6 +1027,15 @@ func (sm *StreamerManager) runStreamerLoop(ctx context.Context, s *Streamer) {
 			return
 		default:
 			if s.State != StatePlaying {
+				// Release the source label while parked: a stopped
+				// AutoDJ is not a live source, and leaving the field
+				// set would both show the mount as sourced in the admin
+				// UI and block TryClaimSource for a real encoder.
+				if out, ok := sm.relay.GetStream(s.OutputMount); ok {
+					if out.GetSourceIP() == autoDJSourceLabel {
+						out.SetSourceIP("")
+					}
+				}
 				select {
 				case <-ctx.Done():
 					return
@@ -1206,6 +1231,7 @@ func (sm *StreamerManager) streamFile(ctx context.Context, s *Streamer, path str
 	s.CurrentSampleRate = decoder.SampleRate()
 	s.CurrentChannels = 2 // decoders always emit 2 channels via OpenDecoder
 	s.CurrentFileTime = time.Now()
+	s.CurrentPausedNanos.Store(0)
 	s.CurrentFileDuration = 0 // PCM length isn't known up-front for non-MP3 inputs
 	s.mu.Unlock()
 
@@ -1218,6 +1244,12 @@ func (sm *StreamerManager) streamFile(ctx context.Context, s *Streamer, path str
 		output.Name = s.Name
 		output.Visible = true
 	}
+	// Identify the AutoDJ as the mount's source. Every other ingest does
+	// this — icecast/RTMP/SRT record the peer address, the relay client
+	// uses "relay-pull" and WebRTC uses "webrtc-source" — but the AutoDJ
+	// writes in-process and left the field empty, so the admin UI showed a
+	// playing AutoDJ mount as "No source" with a grey (offline) dot.
+	output.SourceIP = autoDJSourceLabel
 	output.Bitrate = fmt.Sprintf("%d", s.Bitrate)
 	if s.Format == "opus" {
 		output.ContentType = "audio/ogg"
@@ -1267,6 +1299,9 @@ func (sm *StreamerManager) streamFile(ctx context.Context, s *Streamer, path str
 	if gain := s.GetVolume(); gain < 1.0 {
 		pcm = newGainReader(pcm, gain)
 	}
+	// Pause support: blocks the encoder's reads while paused so the track
+	// resumes in place rather than being cancelled.
+	pcm = newPauseGate(ctx, s, pcm)
 
 	if s.Format == "opus" {
 		// Opus encoder is locked at 48 kHz; resample if the file is at a
@@ -1321,4 +1356,61 @@ func (g *gainReader) Read(p []byte) (int, error) {
 		p[i+1] = byte(s >> 8)
 	}
 	return n, err
+}
+
+// pauseGate sits between the decoder and the encoder. While the streamer
+// is paused it blocks in Read, which stops the encoder pulling PCM and
+// leaves the decoder exactly where it was — so resuming continues the
+// same track at the same position instead of skipping to the next one.
+//
+// It also records how long it spent blocked. The encoders pace themselves
+// against wall-clock time from the start of the track; without that
+// correction, resuming after a 60 s pause would leave them "behind
+// schedule" and they would dump the rest of the file into the ring buffer
+// as fast as the CPU allows.
+type pauseGate struct {
+	src        io.Reader
+	s          *Streamer
+	ctx        context.Context
+	pausedTotal atomic.Int64 // nanoseconds spent blocked
+}
+
+func newPauseGate(ctx context.Context, s *Streamer, src io.Reader) *pauseGate {
+	return &pauseGate{src: src, s: s, ctx: ctx}
+}
+
+// PausedTotal implements the pauseAware interface the encoders check when
+// computing how far ahead of real time they have encoded.
+func (g *pauseGate) PausedTotal() time.Duration {
+	return time.Duration(g.pausedTotal.Load())
+}
+
+func (g *pauseGate) Read(p []byte) (int, error) {
+	const poll = 50 * time.Millisecond // inaudible resume latency
+	var pausedFrom time.Time
+	for {
+		g.s.mu.RLock()
+		paused := g.s.State == StatePaused
+		g.s.mu.RUnlock()
+		if !paused {
+			if !pausedFrom.IsZero() {
+				d := int64(time.Since(pausedFrom))
+				g.pausedTotal.Add(d)
+				g.s.CurrentPausedNanos.Add(d)
+			}
+			return g.src.Read(p)
+		}
+		if pausedFrom.IsZero() {
+			pausedFrom = time.Now()
+		}
+		select {
+		case <-g.ctx.Done():
+			// Track cancelled (skip / stop / shutdown) while paused.
+			if !pausedFrom.IsZero() {
+				g.pausedTotal.Add(int64(time.Since(pausedFrom)))
+			}
+			return 0, io.EOF
+		case <-time.After(poll):
+		}
+	}
 }

@@ -82,7 +82,13 @@ type streamerEventInfo struct {
 	Shuffle     bool                 `json:"shuffle"`
 	Loop        bool                 `json:"loop"`
 	Queue       []relay.PlaylistItem `json:"queue"`
-	Playlist    []relay.PlaylistItem `json:"playlist"`
+	// PlaylistVersion replaces the full playlist array, which used to be
+	// serialised into every tick of the event feed — twice, since the
+	// legacy unnamed frame carries the same struct. On a 200-track
+	// AutoDJ that was ~31 KB per frame at 2 Hz, i.e. ~99% of all bytes
+	// on /admin/events (#55). Clients refetch
+	// /api/autodj/{mount}/playlist when this number changes.
+	PlaylistVersion uint32 `json:"playlist_version"`
 }
 
 // trackPosition returns how far into the current track the AutoDJ is, in
@@ -93,7 +99,9 @@ func trackPosition(stats relay.StreamerStats) float64 {
 	if stats.State != relay.StatePlaying || stats.StartTime.IsZero() {
 		return 0
 	}
-	elapsed := time.Since(stats.StartTime).Seconds()
+	// Discount time spent paused — otherwise a track resumed after a
+	// 30 s pause reports 30 s more progress than it has actually played.
+	elapsed := (time.Since(stats.StartTime) - stats.PausedFor).Seconds()
 	if elapsed < 0 {
 		return 0
 	}
@@ -201,8 +209,8 @@ func (s *Server) collectStatsPayload(user *config.User) ([]byte, error) {
 				PlaylistLen: stats.PlaylistLen,
 				Shuffle:     stats.Shuffle,
 				Loop:        stats.Loop,
-				Queue:       st.GetQueueInfo(),
-				Playlist:    st.GetPlaylistInfo(),
+				Queue:           st.GetQueueInfo(),
+				PlaylistVersion: stats.PlaylistVersion,
 			})
 		}
 	}

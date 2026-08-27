@@ -33,6 +33,33 @@ const formEnabled = signal(true)
 const formVisible = signal(false)
 const saveError = signal('')
 
+// Green means "this mount has a live source". That is `source_ip`, which
+// is a source *descriptor* rather than strictly an address — icecast and
+// RTMP record the peer, the relay client uses "relay-pull", WebRTC uses
+// "webrtc-source" and the AutoDJ uses "autodj". The AutoDJ was the one
+// ingest that never set it, so a playing AutoDJ showed a permanently grey
+// dot (#56).
+//
+// `health` only refines this when it is meaningful. The encoders skip
+// work entirely while a mount has no listeners, so an idle-but-playing
+// AutoDJ legitimately reports health 0 — treating that as "offline" would
+// just move the false negative somewhere else. Amber is therefore
+// reserved for a mount that has listeners waiting and still isn't
+// delivering.
+function statusDotClass(s: Stream): string {
+  if (!s.source_ip) return 'bg-text-tertiary'
+  if (s.listeners > 0 && s.health < 50) return 'bg-accent'
+  return 'bg-live'
+}
+
+function statusLabel(s: Stream): string {
+  if (!s.source_ip) return 'No source connected'
+  if (s.listeners > 0 && s.health < 50) {
+    return `Source connected but stalling (${Math.round(s.health)}% health)`
+  }
+  return `Live — source: ${s.source_ip}`
+}
+
 function resetForm() {
   formMount.value = ''
   formPassword.value = ''
@@ -161,7 +188,11 @@ export function Streams() {
               streams.value.map((s) => (
                 <tr key={s.mount} class="border-b border-[rgba(255,255,255,0.03)]">
                   <td class="px-4 py-3.5">
-                    <span class={`inline-block w-2 h-2 rounded-full ${s.source_ip ? 'bg-live' : 'bg-text-tertiary'}`} />
+                    <span
+                      class={`inline-block w-2 h-2 rounded-full ${statusDotClass(s)}`}
+                      title={statusLabel(s)}
+                      aria-label={statusLabel(s)}
+                    />
                   </td>
                   <td class="px-4 py-3.5 font-mono font-bold text-sm text-text-primary">
                     <div>{s.mount}</div>
