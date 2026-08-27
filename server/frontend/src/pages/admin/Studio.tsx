@@ -93,7 +93,12 @@ function formatUptime(seconds: number): string {
 
 function enc() { return encodeURIComponent(currentMount.value) }
 
+// Last playlist version seen on the event feed; -1 forces the first
+// event after a mount switch to refetch.
+let lastPlaylistVersion = -1
+
 function resetState() {
+  lastPlaylistVersion = -1
   transportError.value = ''
   state.value = 'stopped'
   trackTitle.value = 'No Track'
@@ -136,8 +141,14 @@ function applyEvent(evt: AutoDJEvent) {
   currentTrackId.value = typeof evt.current_id === 'number' && evt.current_id >= 0
     ? evt.current_id
     : null
-  if (evt.playlist) playlist.value = evt.playlist
   if (evt.queue) queue.value = evt.queue
+  // The playlist itself is no longer pushed on every tick — only a
+  // version counter. Refetch when it moves, which also picks up edits
+  // made from another tab.
+  if (typeof evt.playlist_version === 'number' && evt.playlist_version !== lastPlaylistVersion) {
+    lastPlaylistVersion = evt.playlist_version
+    fetchPlaylist()
+  }
 }
 
 function fetchLibrary(path: string) {
@@ -193,7 +204,7 @@ function fetchTransportState() {
         // Playlist and queue have their own endpoints; don't let the
         // summary overwrite what those returned.
         queue: null,
-        playlist: null,
+        playlist_version: lastPlaylistVersion,
       })
     })
     .catch(() => { /* the mount list effect already surfaces load failures */ })

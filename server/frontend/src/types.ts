@@ -120,7 +120,13 @@ export interface AutoDJEvent {
   shuffle: boolean
   loop: boolean
   queue: PlaylistItem[] | null
-  playlist: PlaylistItem[] | null
+  /**
+   * Bumps on every playlist mutation. The event feed no longer carries
+   * the playlist array itself (it was ~99% of /admin/events traffic on a
+   * large AutoDJ); refetch /api/autodj/{mount}/playlist when this
+   * changes.
+   */
+  playlist_version: number
 }
 
 // API types
