@@ -689,9 +689,20 @@ async function pickAudioSource(mountPath: string): Promise<string> {
     )
   }
 
-  // Audio-only layout — unchanged vinyl visualizer design.
+  // Audio-only layout — vinyl visualizer design.
+  //
+  // pt-16 / pb-24 reserve the space taken by the fixed mini-nav and the
+  // fixed bottom strip (both z-20). Without them the centred column runs
+  // underneath the bottom strip on short viewports and the strip, being
+  // above it, swallowed every click on the volume slider — the control
+  // was visible but dead (#53). The video layout above already reserved
+  // this space; this one didn't.
+  //
+  // overflow-x-hidden rather than overflow-hidden: clipping both axes
+  // meant that once the column was taller than the viewport, the parts
+  // that overflowed could not be scrolled to at all.
   return (
-    <div class="min-h-screen bg-surface-base relative overflow-hidden flex flex-col items-center justify-center">
+    <div class="min-h-screen bg-surface-base relative overflow-x-hidden flex flex-col items-center justify-center px-4 pt-16 pb-24">
       {/* Dot grid texture */}
       <div
         class="fixed inset-0 pointer-events-none z-0"
