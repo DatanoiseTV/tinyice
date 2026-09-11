@@ -37,11 +37,7 @@ func (s *Server) getOIDCProvider(id string) *config.OIDCProvider {
 }
 
 func (s *Server) buildOAuth2Config(provider *config.OIDCProvider, r *http.Request) (*oauth2.Config, *oidc.Provider, error) {
-	scheme := "http"
-	if r.TLS != nil {
-		scheme = "https"
-	}
-	redirectURL := fmt.Sprintf("%s://%s/auth/%s/callback", scheme, r.Host, provider.ID)
+	redirectURL := s.externalURL(r) + "/auth/" + provider.ID + "/callback"
 
 	if provider.ID == "github" {
 		return &oauth2.Config{
@@ -437,4 +433,30 @@ func (s *Server) handleOIDCProvidersList(w http.ResponseWriter, r *http.Request)
 		providers = []publicProvider{}
 	}
 	jsonResponse(w, providers)
+}
+
+// externalURL is the origin a browser reaches this server at, for
+// building absolute URLs (OIDC redirect_uri). Deriving it from r.TLS and
+// r.Host broke behind a TLS-terminating reverse proxy: TinyIce sees plain
+// HTTP on an internal host, registers http://internal/... as the
+// redirect_uri, and the identity provider rejects the login with
+// redirect_uri mismatch. Precedence: the configured base_url; otherwise
+// X-Forwarded-Proto/Host from a trusted proxy; otherwise the request.
+func (s *Server) externalURL(r *http.Request) string {
+	if b := strings.TrimRight(strings.TrimSpace(s.Config.BaseURL), "/"); b != "" {
+		return b
+	}
+	scheme, host := "http", r.Host
+	if r.TLS != nil {
+		scheme = "https"
+	}
+	if s.isTrustedProxy(stripPort(r.RemoteAddr)) {
+		if p := strings.ToLower(strings.TrimSpace(r.Header.Get("X-Forwarded-Proto"))); p == "https" || p == "http" {
+			scheme = p
+		}
+		if h := strings.TrimSpace(r.Header.Get("X-Forwarded-Host")); h != "" {
+			host = h
+		}
+	}
+	return scheme + "://" + host
 }

@@ -160,15 +160,25 @@ func (s *Server) handlePasskeyLoginBegin(w http.ResponseWriter, r *http.Request)
 
 	challengeKey := "login:" + sessionData.Challenge
 	s.webauthnMu.Lock()
+	// This endpoint is unauthenticated by nature (it starts a login), so
+	// it must not let a client grow server state without bound: each call
+	// used to add a map entry plus a goroutine that slept for 60 s. Cap
+	// the number of in-flight challenges; a real user needs one.
+	const maxPendingWebAuthn = 1000
+	if len(s.webauthnSessions) >= maxPendingWebAuthn {
+		s.webauthnMu.Unlock()
+		jsonError(w, "Too many pending passkey logins; try again shortly", http.StatusTooManyRequests)
+		return
+	}
 	s.webauthnSessions[challengeKey] = sessionData
 	s.webauthnMu.Unlock()
 
-	go func() {
-		time.Sleep(60 * time.Second)
+	// A timer, not a sleeping goroutine per request.
+	time.AfterFunc(60*time.Second, func() {
 		s.webauthnMu.Lock()
 		delete(s.webauthnSessions, challengeKey)
 		s.webauthnMu.Unlock()
-	}()
+	})
 
 	jsonResponse(w, map[string]any{
 		"publicKey":    options.Response,
