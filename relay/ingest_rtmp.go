@@ -266,7 +266,8 @@ func ptsFromFLVTimestamp(ms uint32) int64 {
 }
 
 // OnAudio handles incoming audio data from the RTMP stream.
-func (h *rtmpHandler) OnAudio(timestamp uint32, payload io.Reader) error {
+func (h *rtmpHandler) OnAudio(timestamp uint32, payload io.Reader) (err error) {
+	defer recoverIngestErr("rtmp", h.conn.RemoteAddr(), &err)
 	if h.stream == nil {
 		return nil
 	}
@@ -368,7 +369,8 @@ func (h *rtmpHandler) OnAudio(timestamp uint32, payload io.Reader) error {
 }
 
 // OnVideo handles incoming video data from the RTMP stream.
-func (h *rtmpHandler) OnVideo(timestamp uint32, payload io.Reader) error {
+func (h *rtmpHandler) OnVideo(timestamp uint32, payload io.Reader) (err error) {
+	defer recoverIngestErr("rtmp", h.conn.RemoteAddr(), &err)
 	if h.videoStream == nil {
 		_, _ = io.ReadAll(payload)
 		return nil

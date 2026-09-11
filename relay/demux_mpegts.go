@@ -124,7 +124,12 @@ func (d *TSDemuxer) processPacket(pkt []byte) {
 
 func (d *TSDemuxer) parsePAT(payload []byte, payloadStart bool) {
 	if payloadStart && len(payload) > 0 {
+		// pointer_field comes off the wire; a value past the end of the
+		// packet payload is malformed input, not a slice we can take.
 		pointer := int(payload[0])
+		if 1+pointer > len(payload) {
+			return
+		}
 		payload = payload[1+pointer:]
 	}
 	if len(payload) < 12 {
@@ -144,7 +149,12 @@ func (d *TSDemuxer) parsePAT(payload []byte, payloadStart bool) {
 
 func (d *TSDemuxer) parsePMT(payload []byte, payloadStart bool) {
 	if payloadStart && len(payload) > 0 {
+		// pointer_field comes off the wire; a value past the end of the
+		// packet payload is malformed input, not a slice we can take.
 		pointer := int(payload[0])
+		if 1+pointer > len(payload) {
+			return
+		}
 		payload = payload[1+pointer:]
 	}
 	if len(payload) < 17 {

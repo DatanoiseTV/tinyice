@@ -112,6 +112,10 @@ func (m *MPDServer) Stop() {
 
 func (m *MPDServer) handleConnection(conn net.Conn) {
 	defer conn.Close()
+	// This goroutine is spawned from the accept loop, not by net/http, so
+	// nothing recovers a panic here: one malformed command would end the
+	// whole server. Contain it to the connection.
+	defer recoverIngest("mpd", conn.RemoteAddr())
 	writer := bufio.NewWriter(conn)
 	// Use a sized buffered reader and readMPDLine so a client that streams
 	// megabytes without a newline can't grow our buffer until we OOM.
@@ -408,7 +412,9 @@ func (m *MPDServer) handleAlbumArt(args string, resp *MPDResponse) {
 		fmt.Sscanf(parts[1], "%d", &offset)
 	}
 
-	if offset >= len(fakeArt) {
+	// Sscanf happily parses a negative offset; a lower bound is needed
+	// or fakeArt[-1:] panics and takes the process with it.
+	if offset < 0 || offset >= len(fakeArt) {
 		resp.ACK(50, 0, "albumart", "No album art is available at this offset")
 		return
 	}
@@ -482,10 +488,16 @@ func (m *MPDServer) handleStatus(resp *MPDResponse) {
 }
 
 func (m *MPDServer) handleCurrentSong(resp *MPDResponse) {
+	// Snapshot, release, then write. writeSongInfo takes the same RLock;
+	// calling it while still holding one is a recursive RLock on a
+	// sync.RWMutex, which deadlocks the moment a writer (the playback
+	// loop on every track change) queues between the two acquisitions —
+	// and the writer it blocks IS the AutoDJ, so the mount goes silent.
 	m.streamer.mu.RLock()
-	defer m.streamer.mu.RUnlock()
-	if m.streamer.CurrentPlayingPos >= 0 {
-		m.writeSongInfo(resp, m.streamer.CurrentFile, m.streamer.CurrentPlayingPos, m.streamer.CurrentPlayingID)
+	file, pos, id := m.streamer.CurrentFile, m.streamer.CurrentPlayingPos, m.streamer.CurrentPlayingID
+	m.streamer.mu.RUnlock()
+	if pos >= 0 {
+		m.writeSongInfo(resp, file, pos, id)
 	}
 }
 
@@ -555,17 +567,21 @@ func (m *MPDServer) handlePlaylistId(args string, resp *MPDResponse) {
 		return
 	}
 
+	// Same recursive-RLock hazard as handleCurrentSong: find the entry
+	// under the lock, release, then write.
+	found, idx, rel := false, 0, ""
 	m.streamer.mu.RLock()
-	if id > 0 {
-		for i, ps := range m.streamer.Playlist {
-			if ps.ID == id {
-				rel, _ := filepath.Rel(m.streamer.MusicDir, ps.Path)
-				m.writeSongInfo(resp, rel, i, ps.ID)
-				break
-			}
+	for i, ps := range m.streamer.Playlist {
+		if ps.ID == id {
+			rel, _ = filepath.Rel(m.streamer.MusicDir, ps.Path)
+			found, idx = true, i
+			break
 		}
 	}
 	m.streamer.mu.RUnlock()
+	if found {
+		m.writeSongInfo(resp, rel, idx, id)
+	}
 }
 
 func (m *MPDServer) handleLsInfo(args string, resp *MPDResponse) {
