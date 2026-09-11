@@ -28,19 +28,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the page. The meters now write to the DOM through refs, as the bars and
   peak markers already did.
 
-### Changed
-
-- **Dependencies updated** (the three open Dependabot PRs, rolled up):
-  pion/webrtc 4.2.12 → 4.2.16 and its ice/dtls/srtp/sctp/stun/turn
-  stack, coreos/go-oidc 3.18 → 3.20, go-webauthn 0.17.3 → 0.17.4,
-  wneessen/go-mail 0.7.3 → 0.8.1, gorm 1.31.1 → 1.31.2, x/crypto
-  0.51 → 0.54 plus x/sys, x/net and x/text; actions/checkout, setup-go
-  and setup-node v6 → v7; alpine 3.23 → 3.24 in the runtime image.
-
-## [Unreleased]
-
-### Fixed
-
 - **Icecast sources behind an HTTP reverse proxy** (#58). A source that
   frames its body properly (chunked, or a length) is now read through
   `r.Body` instead of the raw hijacked socket. Hijacking a framed request
@@ -79,12 +66,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Dependencies updated** (the three open Dependabot PRs, rolled up):
+  pion/webrtc 4.2.12 → 4.2.16 and its ice/dtls/srtp/sctp/stun/turn
+  stack, coreos/go-oidc 3.18 → 3.20, go-webauthn 0.17.3 → 0.17.4,
+  wneessen/go-mail 0.7.3 → 0.8.1, gorm 1.31.1 → 1.31.2, x/crypto
+  0.51 → 0.54 plus x/sys, x/net and x/text; actions/checkout, setup-go
+  and setup-node v6 → v7; alpine 3.23 → 3.24 in the runtime image.
+
 - **`/admin/events` is roughly 40x smaller** (#55). The `autodj` event
   carried the entire playlist array on every tick — twice, counting the
   legacy unnamed frame — which on a 200-track AutoDJ was ~99% of all
   bytes on the feed (measured 126 KB/s, now 2.9 KB/s). It now sends
   `playlist_version`; clients refetch `/api/autodj/{mount}/playlist` when
   that number changes, which also picks up edits made elsewhere.
+
+- **Dependencies updated** (Dependabot #59, #61): shine-mp3 0.1.0 → 0.2.0
+  (needed a source change — see the bitrate-override test), coreos/go-oidc
+  3.20 → 3.21, go-webauthn 0.17.4 → 0.18.0, mewkiz/flac 1.0.13 → 1.0.14,
+  pion/webrtc 4.2.16 → 4.2.19 with its ice/dtls/srtp/sctp/stun/turn stack,
+  x/crypto 0.54 → 0.55, x/net, x/text; the build image moves to
+  golang:1.27-alpine.
 
 ## [2.7.0] - 2026-08-10
 
