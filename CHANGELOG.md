@@ -5,6 +5,48 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Security
+
+- **CSRF via GET on every legacy admin form handler.** `isCSRFSafe`
+  whitelisted GET, the handlers read parameters from the query string and
+  never checked the method, and the session cookie is `SameSite=Lax`
+  (sent on cross-site top-level navigations). A link to
+  `/admin/add-user?username=..&password=..` — or `/admin/autodj/add`
+  with a `song_command`, which is a shell exec — was a one-click,
+  token-free mutation. Mutating handlers reached by GET now return 403.
+  The Icecast `updinfo` GET keeps working with Basic auth but no longer
+  accepts the session cookie.
+- **`/branding/logo` could serve any file, including `tinyice.json`.**
+  Any authenticated account (no role check) could set `logo_path`
+  verbatim; the logo endpoint served it unauthenticated. Superadmin
+  only, and the path must be a regular file under `branding/`.
+- **A DJ could take over an AutoDJ, relay or transcoder mount** by
+  creating a stream with that mount name; the "mount taken" check never
+  consulted those. It does now.
+
+### Fixed
+
+- **Two process-ending panics from wire input**: an MPEG-TS packet with
+  an out-of-range `pointer_field` (SRT publishers), and MPD
+  `albumart "x" -1`. Both are bounds-checked, and the SRT/RTMP/MPD
+  goroutines now recover a panic per connection instead of taking the
+  server down.
+- **A WebRTC source offer with two tracks crashed the server** on
+  disconnect (`close of closed channel`); the first Opus track now owns
+  the pump and extra tracks are declined.
+- **WebRTC/WHEP viewer pump spun at 100% CPU** forever when its mount
+  closed before it found the first Ogg page.
+- **MPD `currentsong` / `playlistid` could deadlock the AutoDJ** via a
+  recursive `RLock` racing the playback loop's writer.
+- **Audio-only HLS output died permanently after the first source
+  drop**; it now resubscribes like the A/V path.
+- **Listeners on a mount with a fallback hung forever** with no response
+  when both mounts were down, leaking a goroutine per reconnect; fresh
+  connections get 404, mid-stream listeners wait bounded and honour
+  disconnects.
+
 ## [2.8.0] - 2026-09-11
 
 ### Fixed
