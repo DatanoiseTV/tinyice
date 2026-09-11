@@ -73,3 +73,32 @@ func TestListenerReturnsWhenClientDisconnects(t *testing.T) {
 		t.Fatal("handleListener kept running after the client disconnected")
 	}
 }
+
+// A fallback cycle (/a -> /b -> /a) with both mounts down used to hop
+// between them with no sleep and no response. It must resolve like any
+// other both-down case: 404 for a fresh connection, promptly.
+func TestListenerFallbackCycleDoesNotSpin(t *testing.T) {
+	s := &Server{
+		Config: &config.Config{
+			FallbackMounts: map[string]string{"/a": "/b", "/b": "/a"},
+			Mounts:         map[string]string{"/a": "x", "/b": "x"},
+		},
+		Relay:        relay.NewRelay(false, nil),
+		authAttempts: make(map[string]*authAttempt),
+		scanAttempts: make(map[string]*scanAttempt),
+		done:         make(chan struct{}),
+	}
+	r := httptest.NewRequest(http.MethodGet, "/a", nil)
+	r.RemoteAddr = "198.51.100.3:1"
+	w := httptest.NewRecorder()
+	finished := make(chan struct{})
+	go func() { s.handleListener(w, r); close(finished) }()
+	select {
+	case <-finished:
+	case <-time.After(3 * time.Second):
+		t.Fatal("handleListener spun on the fallback cycle")
+	}
+	if w.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want 404", w.Code)
+	}
+}
