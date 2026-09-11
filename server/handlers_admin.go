@@ -128,23 +128,9 @@ func (s *Server) handleAddMount(w http.ResponseWriter, r *http.Request) {
 	if mount[0] != '/' {
 		mount = "/" + mount
 	}
-	if !s.hasAccess(user, mount) {
-		exists := false
-		if _, ok := s.Config.Mounts[mount]; ok {
-			exists = true
-		}
-		if !exists {
-			for _, u := range s.Config.Users {
-				if _, ok := u.Mounts[mount]; ok {
-					exists = true
-					break
-				}
-			}
-		}
-		if exists {
-			http.Error(w, "Mount taken", http.StatusConflict)
-			return
-		}
+	if !s.hasAccess(user, mount) && s.mountTaken(mount) {
+		http.Error(w, "Mount taken", http.StatusConflict)
+		return
 	}
 	hashed, err := config.HashPassword(password)
 	if err != nil {
@@ -184,6 +170,7 @@ func (s *Server) handleRemoveMount(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleToggleLatency(w http.ResponseWriter, r *http.Request) {
 	if !s.isCSRFSafe(r) {
+		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
 	user, ok := s.checkAuth(r)
@@ -204,7 +191,16 @@ func (s *Server) handleMetadata(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
-	user, ok := s.checkAuth(r)
+	// GET is the Icecast-compatible `?mode=updinfo` path used by source
+	// clients with Basic auth. It must keep working on GET, so it must
+	// NOT honour the session cookie there — otherwise a cross-site link
+	// carries the operator's cookie into a state change with no CSRF
+	// token. Session users update metadata through the JSON API.
+	var user *config.User
+	ok := false
+	if r.Method != http.MethodGet {
+		user, ok = s.checkAuth(r)
+	}
 	mount, song := r.URL.Query().Get("mount"), r.URL.Query().Get("song")
 	if !ok {
 		_, p, okAuth := r.BasicAuth()
@@ -318,6 +314,7 @@ func (s *Server) handleToggleVisible(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleAddUser(w http.ResponseWriter, r *http.Request) {
 	if !s.isCSRFSafe(r) {
+		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
 	user, ok := s.checkAuth(r)
@@ -338,6 +335,7 @@ func (s *Server) handleAddUser(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleRemoveUser(w http.ResponseWriter, r *http.Request) {
 	if !s.isCSRFSafe(r) {
+		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
 	user, ok := s.checkAuth(r)
@@ -360,6 +358,7 @@ func (s *Server) handleRemoveUser(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleAddBannedIP(w http.ResponseWriter, r *http.Request) {
 	if !s.isCSRFSafe(r) {
+		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
 	user, ok := s.checkAuth(r)
@@ -375,6 +374,7 @@ func (s *Server) handleAddBannedIP(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleRemoveBannedIP(w http.ResponseWriter, r *http.Request) {
 	if !s.isCSRFSafe(r) {
+		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
 	user, ok := s.checkAuth(r)

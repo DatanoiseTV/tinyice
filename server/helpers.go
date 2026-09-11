@@ -120,3 +120,40 @@ func (s *Server) safeJoin(base, rel string) (string, error) {
 
 	return validatedPath, nil
 }
+
+// mountTaken reports whether a mount is already owned by anything a user
+// must not be able to claim over: another user's or the global mount
+// table, an AutoDJ output, a relay, a transcoder output, or an advanced
+// mount entry. The create-mount paths used to consult only the first two,
+// so a DJ could register /autodj as their own mount, pass hasAccess for
+// it, and then pause/kick/reconfigure the AutoDJ (or a relay/transcoder)
+// that a superadmin set up.
+func (s *Server) mountTaken(mount string) bool {
+	if _, ok := s.Config.Mounts[mount]; ok {
+		return true
+	}
+	for _, u := range s.Config.Users {
+		if _, ok := u.Mounts[mount]; ok {
+			return true
+		}
+	}
+	for _, adj := range s.Config.AutoDJs {
+		if adj != nil && adj.Mount == mount {
+			return true
+		}
+	}
+	for _, rl := range s.Config.Relays {
+		if rl != nil && rl.Mount == mount {
+			return true
+		}
+	}
+	for _, tc := range s.Config.Transcoders {
+		if tc != nil && (tc.OutputMount == mount || tc.InputMount == mount) {
+			return true
+		}
+	}
+	if _, ok := s.Config.AdvancedMounts[mount]; ok {
+		return true
+	}
+	return false
+}

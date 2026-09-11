@@ -13,6 +13,7 @@ import (
 
 func (s *Server) handleAddRelay(w http.ResponseWriter, r *http.Request) {
 	if !s.isCSRFSafe(r) {
+		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
 	user, ok := s.checkAuth(r)
@@ -54,6 +55,7 @@ func (s *Server) handleAddRelay(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleToggleRelay(w http.ResponseWriter, r *http.Request) {
 	if !s.isCSRFSafe(r) {
+		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
 	user, ok := s.checkAuth(r)
@@ -77,6 +79,7 @@ func (s *Server) handleToggleRelay(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleDeleteRelay(w http.ResponseWriter, r *http.Request) {
 	if !s.isCSRFSafe(r) {
+		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
 	user, ok := s.checkAuth(r)
@@ -96,6 +99,7 @@ func (s *Server) handleDeleteRelay(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleRestartRelay(w http.ResponseWriter, r *http.Request) {
 	if !s.isCSRFSafe(r) {
+		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
 	user, ok := s.checkAuth(r)
