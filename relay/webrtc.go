@@ -91,6 +91,16 @@ func (wm *WebRTCManager) HandleOffer(mount string, offer webrtc.SessionDescripti
 	if err != nil {
 		return nil, err
 	}
+	// Every early return below used to leak the peer connection — pion
+	// keeps four goroutines and RTCP tickers alive until Close — so a
+	// rejected or malformed offer cost the process resources for good.
+	// Unauthenticated /webrtc/offer made that a free leak per request.
+	handedOff := false
+	defer func() {
+		if !handedOff {
+			_ = peerConnection.Close()
+		}
+	}()
 
 	// Create a track for Opus audio
 	audioTrack, err := webrtc.NewTrackLocalStaticSample(webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeOpus}, "audio", "tinyice")
@@ -136,6 +146,7 @@ func (wm *WebRTCManager) HandleOffer(mount string, offer webrtc.SessionDescripti
 	})
 	go wm.streamToTrack(pumpCtx, peerConnection, audioTrack, stream)
 
+	handedOff = true
 	return peerConnection.LocalDescription(), nil
 }
 
@@ -159,6 +170,16 @@ func (wm *WebRTCManager) HandleSourceOffer(mount string, offer webrtc.SessionDes
 	if err != nil {
 		return nil, err
 	}
+	// Every early return below used to leak the peer connection — pion
+	// keeps four goroutines and RTCP tickers alive until Close — so a
+	// rejected or malformed offer cost the process resources for good.
+	// Unauthenticated /webrtc/offer made that a free leak per request.
+	handedOff := false
+	defer func() {
+		if !handedOff {
+			_ = peerConnection.Close()
+		}
+	}()
 
 	// Per-source-ingest context, cancelled when the PC tears down.
 	// The OnTrack ReadRTP loop selects on it so a closed PC unwinds
@@ -309,6 +330,7 @@ func (wm *WebRTCManager) HandleSourceOffer(mount string, offer webrtc.SessionDes
 	}
 	<-gatherComplete
 
+	handedOff = true
 	return peerConnection.LocalDescription(), nil
 }
 
@@ -434,6 +456,16 @@ func (wm *WebRTCManager) HandleWHEPOffer(mount, sdpOffer string) (string, error)
 	if err != nil {
 		return "", err
 	}
+	// Every early return below used to leak the peer connection — pion
+	// keeps four goroutines and RTCP tickers alive until Close — so a
+	// rejected or malformed offer cost the process resources for good.
+	// Unauthenticated /webrtc/offer made that a free leak per request.
+	handedOff := false
+	defer func() {
+		if !handedOff {
+			_ = pc.Close()
+		}
+	}()
 
 	// Audio: only attach when the source is Opus. Browsers don't decode
 	// MP3 over WebRTC, so mounts without Opus get video-only playback.
@@ -521,6 +553,7 @@ func (wm *WebRTCManager) HandleWHEPOffer(mount, sdpOffer string) (string, error)
 		go wm.streamVideoToTrack(pumpCtx, pc, videoTrack, videoStream)
 	}
 
+	handedOff = true
 	return pc.LocalDescription().SDP, nil
 }
 
