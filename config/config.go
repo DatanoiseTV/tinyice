@@ -501,7 +501,11 @@ func (config *Config) initMapsAndArrays() {
 func (config *Config) handleMigrations() {
 	// Migration/Backward compatibility — lift a legacy top-level
 	// AdminUser/AdminPassword pair into the unified Users map.
-	if config.AdminUser != "" && config.Users[config.AdminUser] == nil {
+	// Only when there are no users at all. Lifting whenever the legacy
+	// name was missing meant a superadmin who had deleted the original
+	// account (or renamed it) got it silently recreated on every restart,
+	// with the original password from the legacy admin_password field.
+	if config.AdminUser != "" && len(config.Users) == 0 {
 		config.Users[config.AdminUser] = &User{
 			Username: config.AdminUser,
 			Password: config.AdminPassword,

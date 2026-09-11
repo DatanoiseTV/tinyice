@@ -41,3 +41,20 @@ func TestSaveConfigConcurrentWithMapWrites(t *testing.T) {
 	}()
 	wg.Wait()
 }
+
+// The legacy admin_user/admin_password lift must only bootstrap an empty
+// user table. Lifting whenever the name was absent resurrected a deleted
+// superadmin on every restart, with its original password.
+func TestLegacyAdminIsNotResurrected(t *testing.T) {
+	c := &Config{AdminUser: "root", AdminPassword: "$2a$10$x",
+		Users: map[string]*User{"other": {Username: "other", Role: RoleSuperAdmin}}}
+	c.handleMigrations()
+	if _, back := c.Users["root"]; back {
+		t.Fatal("deleted legacy admin was recreated from admin_user/admin_password")
+	}
+	empty := &Config{AdminUser: "root", AdminPassword: "$2a$10$x", Users: map[string]*User{}}
+	empty.handleMigrations()
+	if _, ok := empty.Users["root"]; !ok {
+		t.Fatal("legacy admin must still bootstrap an empty user table")
+	}
+}

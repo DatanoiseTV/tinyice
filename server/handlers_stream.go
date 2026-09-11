@@ -135,17 +135,28 @@ func (s *Server) handleSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Same lockout the login form and the WebRTC source endpoint apply.
+	// This path had none, so the source password — which grants the
+	// ability to broadcast on the station — could be brute-forced at
+	// line rate with no consequence.
+	if err := s.checkAuthLimit(clientIP); err != nil {
+		w.Header().Set("WWW-Authenticate", `Basic realm="Icecast"`)
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
 	_, p, ok := r.BasicAuth()
 	if !ok || !config.CheckPasswordHash(p, requiredPass) {
 		u, _, _ := r.BasicAuth()
 		if u == "" {
 			u = "unknown"
 		}
+		s.recordAuthFailure(clientIP)
 		s.logAuthFailed(u, clientIP, "source password mismatch")
 		w.Header().Set("WWW-Authenticate", `Basic realm="Icecast"`)
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
+	s.recordAuthSuccess(clientIP)
 
 	s.logAuth().Infow("Source auth successful", "mount", mount, "ip", clientIP)
 
