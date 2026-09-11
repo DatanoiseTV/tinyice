@@ -2,6 +2,7 @@ package relay
 
 import (
 	"context"
+	"runtime"
 	"testing"
 	"time"
 
@@ -108,5 +109,36 @@ func TestViewerPumpExitsWhenStreamClosesBeforeSync(t *testing.T) {
 	case <-done:
 	case <-time.After(3 * time.Second):
 		t.Fatal("viewer pump did not exit after Stream.Close — it is spinning on the closed signal channel")
+	}
+}
+
+// A rejected offer must not leak the peer connection. Every early return
+// in the three offer handlers used to leave it open, and pion keeps four
+// goroutines plus RTCP tickers alive until Close — measured: 30 offers
+// that pass SetRemoteDescription's parse but carry no ICE credentials
+// left 120 goroutines behind. /webrtc/offer is unauthenticated, so that
+// was a free per-request leak.
+func TestRejectedOfferClosesPeerConnection(t *testing.T) {
+	r := NewRelay(false, nil)
+	st := r.GetOrCreateStream("/leak")
+	st.mu.Lock()
+	st.ContentType = "audio/ogg" // HandleOffer refuses non-Opus mounts before creating a PC
+	st.mu.Unlock()
+	wm := NewWebRTCManager(r)
+	// Parses, but has no ice-ufrag: rejected after the PC exists.
+	sdp := "v=0\r\no=- 1 1 IN IP4 127.0.0.1\r\ns=-\r\nt=0 0\r\nm=audio 9 UDP/TLS/RTP/SAVPF 111\r\nc=IN IP4 0.0.0.0\r\na=rtpmap:111 opus/48000/2\r\na=recvonly\r\na=mid:0\r\n"
+
+	runtime.GC()
+	time.Sleep(200 * time.Millisecond)
+	before := runtime.NumGoroutine()
+	for i := 0; i < 30; i++ {
+		if _, err := wm.HandleOffer("/leak", webrtc.SessionDescription{Type: webrtc.SDPTypeOffer, SDP: sdp}); err == nil {
+			t.Fatal("offer without ICE credentials was accepted")
+		}
+	}
+	time.Sleep(700 * time.Millisecond)
+	runtime.GC()
+	if delta := runtime.NumGoroutine() - before; delta > 12 {
+		t.Fatalf("goroutines grew by %d across 30 rejected offers — peer connections are leaking", delta)
 	}
 }

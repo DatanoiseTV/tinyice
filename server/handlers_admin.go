@@ -633,7 +633,11 @@ func (s *Server) handleHotSwap(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
-	if _, ok := s.checkAuth(r); !ok {
+	// Restarting the server is superadmin-only; every other role could
+	// bounce the whole service (and every listener) before this check.
+	user, ok := s.checkAuth(r)
+	if !ok || user.Role != config.RoleSuperAdmin {
+		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
 

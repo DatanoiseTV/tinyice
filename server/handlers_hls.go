@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"fmt"
+	"image/jpeg"
 	"io"
 	"net/http"
 	"strconv"
@@ -274,8 +275,19 @@ func (s *Server) handlePoster(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "bad poster", http.StatusBadRequest)
 			return
 		}
-		// Minimal JPEG sniff: SOI marker FF D8 FF.
-		if !(data[0] == 0xFF && data[1] == 0xD8 && data[2] == 0xFF) {
+		// Posters are frames the video player captures, so only a mount
+		// with a /video sibling has anything legitimate to upload. This
+		// endpoint is anonymous by design (viewers upload), which makes
+		// "any client can set any mount's poster" inherent; restricting
+		// it to video mounts and to bytes that decode as a JPEG of sane
+		// size at least keeps audio stations un-defaceable and rules out
+		// arbitrary blobs.
+		if _, hasVideo := s.Relay.GetStream(mount + "/video"); !hasVideo {
+			http.Error(w, "mount has no video", http.StatusNotFound)
+			return
+		}
+		cfg, err := jpeg.DecodeConfig(bytes.NewReader(data))
+		if err != nil || cfg.Width < 16 || cfg.Height < 16 || cfg.Width > 4096 || cfg.Height > 4096 {
 			http.Error(w, "not a JPEG", http.StatusUnsupportedMediaType)
 			return
 		}

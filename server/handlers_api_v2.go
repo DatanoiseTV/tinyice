@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -2314,8 +2315,13 @@ func (s *Server) apiUploadLogo(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, "Forbidden", http.StatusForbidden)
 		return
 	}
-	if _, ok := s.checkAuth(r); !ok {
+	user, ok := s.checkAuth(r)
+	if !ok {
 		jsonError(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if user.Role != config.RoleSuperAdmin {
+		jsonError(w, "Forbidden", http.StatusForbidden)
 		return
 	}
 
@@ -2330,9 +2336,26 @@ func (s *Server) apiUploadLogo(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
+	// The file is served from this origin by /branding/logo. Trusting the
+	// upload's extension let any account store logo.html or logo.svg with
+	// a script in it — stored XSS against whoever opens the site. Only
+	// raster image types, and the bytes must actually decode as one.
 	ext := strings.ToLower(filepath.Ext(header.Filename))
-	if ext == "" {
-		ext = ".png"
+	switch ext {
+	case ".png", ".jpg", ".jpeg", ".gif", ".webp":
+	default:
+		jsonError(w, "logo must be a PNG, JPEG, GIF or WebP image", http.StatusBadRequest)
+		return
+	}
+	sniff := make([]byte, 512)
+	n, _ := io.ReadFull(file, sniff)
+	if ct := http.DetectContentType(sniff[:n]); !strings.HasPrefix(ct, "image/") || ct == "image/svg+xml" {
+		jsonError(w, "logo does not look like an image", http.StatusBadRequest)
+		return
+	}
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		jsonError(w, "Failed to read upload", http.StatusBadRequest)
+		return
 	}
 	destPath := filepath.Join("branding", "logo"+ext)
 
@@ -2365,6 +2388,10 @@ func (s *Server) handleServeLogo(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	// Belt and braces for a pre-existing logo file: never let the browser
+	// interpret this as a document.
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; sandbox")
 	http.ServeFile(w, r, p)
 }
 
@@ -2419,6 +2446,14 @@ func (s *Server) apiGetTokens(w http.ResponseWriter, r *http.Request) {
 func (s *Server) apiCreateToken(w http.ResponseWriter, r *http.Request) {
 	if !s.isCSRFSafe(r) {
 		jsonError(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+	// Token management needs an interactive session. A request that
+	// authenticated with a Bearer token could otherwise mint further
+	// tokens — including non-expiring ones from an expiring one — so a
+	// leaked short-lived token became permanent access.
+	if strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ") {
+		jsonError(w, "API tokens cannot create tokens; use a logged-in session", http.StatusForbidden)
 		return
 	}
 	user, ok := s.checkAuth(r)

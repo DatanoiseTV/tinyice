@@ -752,6 +752,13 @@ func (m *MPDServer) handleSave(args string, resp *MPDResponse) {
 
 func (m *MPDServer) handleRm(args string, resp *MPDResponse) {
 	name := strings.Trim(args, "\"")
+	// The name comes off the wire and was joined into a path unchecked:
+	// `rm "../../somewhere/file"` deleted somewhere/file.pls anywhere on
+	// disk. A playlist name is a bare filename.
+	if name == "" || name != filepath.Base(name) || strings.HasPrefix(name, ".") {
+		resp.ACK(2, 0, "rm", "invalid playlist name")
+		return
+	}
 	os.Remove(filepath.Join("playlists", name+".pls"))
 }
 
