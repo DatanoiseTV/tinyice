@@ -15,12 +15,6 @@ export function Embed() {
   useEffect(() => {
     const sse = createSSE('/events')
 
-    sse.on('metadata', (evt) => {
-      if (evt.mount === data.mount) {
-        title.value = evt.title
-        artist.value = evt.artist
-      }
-    })
 
     sse.on('stream', (evt) => {
       if (evt.mount === data.mount) {

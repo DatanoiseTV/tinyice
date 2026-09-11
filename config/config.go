@@ -514,10 +514,29 @@ func (config *Config) handleMigrations() {
 	// That line is gone — the Enabled flag is now honoured as persisted.
 }
 
+// configMapMu guards every map inside Config (Users, Mounts, VisibleMounts,
+// DisabledMounts, AdvancedMounts, FallbackMounts and each User's Mounts)
+// against concurrent iteration and mutation. SaveConfig marshals the live
+// struct — reflect walks those maps — and it runs from a background timer
+// (API-token last-used tracking) as well as from handlers, so any handler
+// mutating a map at that moment hit Go's fatal "concurrent map iteration
+// and map write", which is not a panic and ends the process. Mutators
+// take Lock() around the write; SaveConfig takes the read side. Never
+// call SaveConfig while holding Lock().
+var configMapMu sync.RWMutex
+
+// LockMaps / UnlockMaps bracket a mutation of any Config map. (Not
+// named Lock/Unlock: that would make Config a sync.Locker in vet's eyes
+// and flag every by-value use of the struct.)
+func (c *Config) LockMaps()   { configMapMu.Lock() }
+func (c *Config) UnlockMaps() { configMapMu.Unlock() }
+
 func (c *Config) SaveConfig() error {
 	configSaveMu.Lock()
 	defer configSaveMu.Unlock()
+	configMapMu.RLock()
 	data, err := json.MarshalIndent(c, "", "    ")
+	configMapMu.RUnlock()
 	if err != nil {
 		return err
 	}

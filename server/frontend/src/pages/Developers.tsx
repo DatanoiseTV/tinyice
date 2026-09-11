@@ -302,9 +302,11 @@ await pc.setRemoteDescription(answer)`,
                 label: 'TypeScript',
                 language: 'typescript',
                 code: `const source = new EventSource('/events')
-source.addEventListener('metadata', (e) => {
-  const { mount, title, artist } = JSON.parse(e.data)
-  console.log(\`Now playing on \${mount}: \${title} \u2014 \${artist}\`)
+// One 'stream' event per mount, twice a second: title is the current
+// song, artist is the stream name.
+source.addEventListener('stream', (e) => {
+  const { mount, title, artist, listeners } = JSON.parse(e.data)
+  console.log(\`Now playing on \${mount}: \${title} \u2014 \${artist} (\${listeners} listening)\`)
 })`,
               }]} />
             </section>

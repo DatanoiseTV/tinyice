@@ -99,12 +99,16 @@ func (s *Server) handleUpdateFallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if fallback == "" {
+		s.Config.LockMaps()
 		delete(s.Config.FallbackMounts, mount)
+		s.Config.UnlockMaps()
 	} else {
 		if fallback[0] != '/' {
 			fallback = "/" + fallback
 		}
+		s.Config.LockMaps()
 		s.Config.FallbackMounts[mount] = fallback
+		s.Config.UnlockMaps()
 	}
 	s.Config.SaveConfig()
 	http.Redirect(w, r, "/admin", http.StatusSeeOther)
@@ -138,9 +142,13 @@ func (s *Server) handleAddMount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if user.Role == config.RoleSuperAdmin {
+		s.Config.LockMaps()
 		s.Config.Mounts[mount] = hashed
+		s.Config.UnlockMaps()
 	} else {
+		s.Config.LockMaps()
 		user.Mounts[mount] = hashed
+		s.Config.UnlockMaps()
 	}
 	s.Config.SaveConfig()
 	http.Redirect(w, r, "/admin", http.StatusSeeOther)
@@ -159,10 +167,18 @@ func (s *Server) handleRemoveMount(w http.ResponseWriter, r *http.Request) {
 	if !s.hasAccess(user, mount) {
 		return
 	}
+	s.Config.LockMaps()
 	delete(s.Config.Mounts, mount)
+	s.Config.UnlockMaps()
+	s.Config.LockMaps()
 	delete(s.Config.DisabledMounts, mount)
+	s.Config.UnlockMaps()
+	s.Config.LockMaps()
 	delete(s.Config.VisibleMounts, mount)
+	s.Config.UnlockMaps()
+	s.Config.LockMaps()
 	delete(user.Mounts, mount)
+	s.Config.UnlockMaps()
 	s.Relay.RemoveStream(mount)
 	s.Config.SaveConfig()
 	http.Redirect(w, r, "/admin", http.StatusSeeOther)
@@ -274,7 +290,9 @@ func (s *Server) handleToggleMount(w http.ResponseWriter, r *http.Request) {
 	user, ok := s.checkAuth(r)
 	mount := r.FormValue("mount")
 	if ok && s.hasAccess(user, mount) {
+		s.Config.LockMaps()
 		s.Config.DisabledMounts[mount] = !s.Config.DisabledMounts[mount]
+		s.Config.UnlockMaps()
 		if s.Config.DisabledMounts[mount] {
 			s.Relay.RemoveStream(mount)
 			s.Audit(r, "mount_disabled", "stream", mount, "")
@@ -297,7 +315,9 @@ func (s *Server) handleToggleVisible(w http.ResponseWriter, r *http.Request) {
 	}
 	mount := r.FormValue("mount")
 	if ok && s.hasAccess(user, mount) {
+		s.Config.LockMaps()
 		s.Config.VisibleMounts[mount] = !s.Config.VisibleMounts[mount]
+		s.Config.UnlockMaps()
 		if st, ok := s.Relay.GetStream(mount); ok {
 			st.SetVisible(s.Config.VisibleMounts[mount])
 		}
@@ -326,7 +346,9 @@ func (s *Server) handleAddUser(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "Failed to hash password: "+err.Error(), http.StatusBadRequest)
 				return
 			}
+			s.Config.LockMaps()
 			s.Config.Users[un] = &config.User{Username: un, Password: hp, Role: config.RoleAdmin, Mounts: make(map[string]string)}
+			s.Config.UnlockMaps()
 			s.Config.SaveConfig()
 		}
 	}
@@ -342,7 +364,9 @@ func (s *Server) handleRemoveUser(w http.ResponseWriter, r *http.Request) {
 	if ok && user.Role == config.RoleSuperAdmin {
 		un := r.FormValue("username")
 		if un != user.Username {
+			s.Config.LockMaps()
 			delete(s.Config.Users, un)
+			s.Config.UnlockMaps()
 			s.sessionsMu.Lock()
 			for sid, sess := range s.sessions {
 				if sess.User != nil && sess.User.Username == un {

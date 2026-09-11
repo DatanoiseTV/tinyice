@@ -503,8 +503,13 @@ func (s *Server) handleListener(w http.ResponseWriter, r *http.Request) {
 
 		stream, ok := s.Relay.GetStream(mount)
 		if !ok {
+			// Follow the fallback only once per pass. FallbackMounts is
+			// operator-edited and nothing rejects a cycle (/a -> /b and
+			// /b -> /a); with both down the old code hopped between them
+			// with no sleep and no response, at 100% of a core, logging
+			// "falling back" thousands of times a second.
 			fallback, hasFallback := s.Config.FallbackMounts[mount]
-			if hasFallback && fallback != mount {
+			if hasFallback && fallback != mount && mount == originalMount {
 				logger.L.Infow("Primary stream down, falling back", "from", mount, "to", fallback)
 				mount = fallback
 				continue

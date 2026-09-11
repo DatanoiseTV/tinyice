@@ -43,7 +43,11 @@ func (s *Server) handleSetupVerifyToken(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if subtle.ConstantTimeCompare([]byte(req.Token), []byte(s.setupToken)) != 1 {
+	// Never accept an empty token: ConstantTimeCompare("", "") is 1, and an
+	// empty server-side token is exactly what a mid-setup restart used to
+	// leave behind.
+	if s.setupToken == "" || req.Token == "" ||
+		subtle.ConstantTimeCompare([]byte(req.Token), []byte(s.setupToken)) != 1 {
 		jsonError(w, "Invalid setup token", http.StatusForbidden)
 		return
 	}
@@ -67,7 +71,11 @@ func (s *Server) handleSetupComplete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if subtle.ConstantTimeCompare([]byte(req.Token), []byte(s.setupToken)) != 1 {
+	// Never accept an empty token: ConstantTimeCompare("", "") is 1, and an
+	// empty server-side token is exactly what a mid-setup restart used to
+	// leave behind.
+	if s.setupToken == "" || req.Token == "" ||
+		subtle.ConstantTimeCompare([]byte(req.Token), []byte(s.setupToken)) != 1 {
 		jsonError(w, "Invalid setup token", http.StatusForbidden)
 		return
 	}
@@ -89,19 +97,23 @@ func (s *Server) handleSetupComplete(w http.ResponseWriter, r *http.Request) {
 	s.Config.AdminUser = req.Username
 	s.Config.AdminPassword = hashed
 	s.Config.SetupComplete = true
+	s.Config.LockMaps()
 	s.Config.Users[req.Username] = &config.User{
 		Username: req.Username,
 		Password: hashed,
 		Role:     config.RoleSuperAdmin,
 		Mounts:   make(map[string]string),
 	}
+	s.Config.UnlockMaps()
 
 	defaultSourcePass := generateRandomString(12)
 	liveMountPass := generateRandomString(12)
 	hDefaultSource, _ := config.HashPassword(defaultSourcePass)
 	hLiveMount, _ := config.HashPassword(liveMountPass)
 	s.Config.DefaultSourcePassword = hDefaultSource
+	s.Config.LockMaps()
 	s.Config.Mounts["/live"] = hLiveMount
+	s.Config.UnlockMaps()
 
 	if err := s.Config.SaveConfig(); err != nil {
 		jsonError(w, "Failed to save config", http.StatusInternalServerError)

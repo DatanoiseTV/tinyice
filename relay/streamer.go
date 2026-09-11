@@ -683,6 +683,8 @@ func (s *Streamer) signalStateChange() {
 	case s.stateCh <- struct{}{}:
 	default:
 	}
+	// MPD clients waiting in `idle` want to hear about play/pause/stop.
+	s.broadcastIdle("player")
 }
 
 func (s *Streamer) execSongCommand() (string, error) {
@@ -1237,6 +1239,7 @@ func (sm *StreamerManager) streamFile(ctx context.Context, s *Streamer, path str
 	s.CurrentPausedNanos.Store(0)
 	s.CurrentFileDuration = 0 // PCM length isn't known up-front for non-MP3 inputs
 	s.mu.Unlock()
+	s.broadcastIdle("player") // new track: idle MPD clients refresh currentsong
 
 	// Update stream metadata under the output stream's mutex so concurrent
 	// Snapshot / listener reads see a coherent set of fields.

@@ -17,11 +17,20 @@ func (s *Server) handlePlayerClearQueue(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
-	if _, ok := s.checkAuth(r); !ok {
+	user, ok := s.checkAuth(r)
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
 	mount := r.FormValue("mount")
+	// Per-mount authorisation, as the JSON API's requireMountAccess does.
+	// These handlers only checked that the caller was logged in, so a
+	// DJ whose Mounts map holds /a could drive, wipe or browse /b.
+	if !s.hasAccess(user, mount) {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
 	streamer := s.StreamerM.GetStreamer(mount)
 	if streamer == nil {
 		http.Error(w, "Streamer not found", http.StatusNotFound)
@@ -37,11 +46,20 @@ func (s *Server) handlePlayerToggle(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
-	if _, ok := s.checkAuth(r); !ok {
+	user, ok := s.checkAuth(r)
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
 	mount := r.FormValue("mount")
+	// Per-mount authorisation, as the JSON API's requireMountAccess does.
+	// These handlers only checked that the caller was logged in, so a
+	// DJ whose Mounts map holds /a could drive, wipe or browse /b.
+	if !s.hasAccess(user, mount) {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
 	streamer := s.StreamerM.GetStreamer(mount)
 	if streamer == nil {
 		http.Error(w, "Streamer not found", http.StatusNotFound)
@@ -58,11 +76,20 @@ func (s *Server) handlePlayerScan(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
-	if _, ok := s.checkAuth(r); !ok {
+	user, ok := s.checkAuth(r)
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
 	mount := r.FormValue("mount")
+	// Per-mount authorisation, as the JSON API's requireMountAccess does.
+	// These handlers only checked that the caller was logged in, so a
+	// DJ whose Mounts map holds /a could drive, wipe or browse /b.
+	if !s.hasAccess(user, mount) {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
 	streamer := s.StreamerM.GetStreamer(mount)
 	if streamer == nil {
 		http.Error(w, "Streamer not found", http.StatusNotFound)
@@ -81,11 +108,20 @@ func (s *Server) handlePlayerSavePlaylist(w http.ResponseWriter, r *http.Request
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
-	if _, ok := s.checkAuth(r); !ok {
+	user, ok := s.checkAuth(r)
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
 	mount := r.FormValue("mount")
+	// Per-mount authorisation, as the JSON API's requireMountAccess does.
+	// These handlers only checked that the caller was logged in, so a
+	// DJ whose Mounts map holds /a could drive, wipe or browse /b.
+	if !s.hasAccess(user, mount) {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
 	streamer := s.StreamerM.GetStreamer(mount)
 	if streamer == nil {
 		http.Error(w, "Streamer not found", http.StatusNotFound)
@@ -105,11 +141,20 @@ func (s *Server) handlePlayerClearPlaylist(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
-	if _, ok := s.checkAuth(r); !ok {
+	user, ok := s.checkAuth(r)
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
 	mount := r.FormValue("mount")
+	// Per-mount authorisation, as the JSON API's requireMountAccess does.
+	// These handlers only checked that the caller was logged in, so a
+	// DJ whose Mounts map holds /a could drive, wipe or browse /b.
+	if !s.hasAccess(user, mount) {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
 	streamer := s.StreamerM.GetStreamer(mount)
 	if streamer == nil {
 		http.Error(w, "Streamer not found", http.StatusNotFound)
@@ -121,11 +166,20 @@ func (s *Server) handlePlayerClearPlaylist(w http.ResponseWriter, r *http.Reques
 }
 
 func (s *Server) handlePlayerPlaylistInfo(w http.ResponseWriter, r *http.Request) {
-	if _, ok := s.checkAuth(r); !ok {
+	user, ok := s.checkAuth(r)
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
 	mount := r.URL.Query().Get("mount")
+	// Per-mount authorisation, as the JSON API's requireMountAccess does.
+	// These handlers only checked that the caller was logged in, so a
+	// DJ whose Mounts map holds /a could drive, wipe or browse /b.
+	if !s.hasAccess(user, mount) {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
 	streamer := s.StreamerM.GetStreamer(mount)
 	if streamer == nil {
 		http.Error(w, "Streamer not found", http.StatusNotFound)
@@ -141,11 +195,20 @@ func (s *Server) handlePlayerLoadPlaylist(w http.ResponseWriter, r *http.Request
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
-	if _, ok := s.checkAuth(r); !ok {
+	user, ok := s.checkAuth(r)
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
 	mount := r.FormValue("mount")
+	// Per-mount authorisation, as the JSON API's requireMountAccess does.
+	// These handlers only checked that the caller was logged in, so a
+	// DJ whose Mounts map holds /a could drive, wipe or browse /b.
+	if !s.hasAccess(user, mount) {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
 	filename := r.FormValue("file")
 	streamer := s.StreamerM.GetStreamer(mount)
 	if streamer == nil {
@@ -178,11 +241,20 @@ func (s *Server) handlePlayerReorder(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
-	if _, ok := s.checkAuth(r); !ok {
+	user, ok := s.checkAuth(r)
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
 	mount := r.FormValue("mount")
+	// Per-mount authorisation, as the JSON API's requireMountAccess does.
+	// These handlers only checked that the caller was logged in, so a
+	// DJ whose Mounts map holds /a could drive, wipe or browse /b.
+	if !s.hasAccess(user, mount) {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
 	fromStr := r.FormValue("from")
 	toStr := r.FormValue("to")
 
@@ -215,11 +287,20 @@ func (s *Server) handlePlayerQueue(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
-	if _, ok := s.checkAuth(r); !ok {
+	user, ok := s.checkAuth(r)
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
 	mount := r.FormValue("mount")
+	// Per-mount authorisation, as the JSON API's requireMountAccess does.
+	// These handlers only checked that the caller was logged in, so a
+	// DJ whose Mounts map holds /a could drive, wipe or browse /b.
+	if !s.hasAccess(user, mount) {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
 	path := r.FormValue("path")
 	action := r.FormValue("action")
 
@@ -259,11 +340,20 @@ func (s *Server) handlePlayerShuffle(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
-	if _, ok := s.checkAuth(r); !ok {
+	user, ok := s.checkAuth(r)
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
 	mount := r.FormValue("mount")
+	// Per-mount authorisation, as the JSON API's requireMountAccess does.
+	// These handlers only checked that the caller was logged in, so a
+	// DJ whose Mounts map holds /a could drive, wipe or browse /b.
+	if !s.hasAccess(user, mount) {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
 	streamer := s.StreamerM.GetStreamer(mount)
 	if streamer == nil {
 		http.Error(w, "Streamer not found", http.StatusNotFound)
@@ -279,11 +369,20 @@ func (s *Server) handlePlayerLoop(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
-	if _, ok := s.checkAuth(r); !ok {
+	user, ok := s.checkAuth(r)
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
 	mount := r.FormValue("mount")
+	// Per-mount authorisation, as the JSON API's requireMountAccess does.
+	// These handlers only checked that the caller was logged in, so a
+	// DJ whose Mounts map holds /a could drive, wipe or browse /b.
+	if !s.hasAccess(user, mount) {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
 	streamer := s.StreamerM.GetStreamer(mount)
 	if streamer == nil {
 		http.Error(w, "Streamer not found", http.StatusNotFound)
@@ -309,11 +408,20 @@ func (s *Server) handlePlayerMetadata(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
-	if _, ok := s.checkAuth(r); !ok {
+	user, ok := s.checkAuth(r)
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
 	mount := r.FormValue("mount")
+	// Per-mount authorisation, as the JSON API's requireMountAccess does.
+	// These handlers only checked that the caller was logged in, so a
+	// DJ whose Mounts map holds /a could drive, wipe or browse /b.
+	if !s.hasAccess(user, mount) {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
 	streamer := s.StreamerM.GetStreamer(mount)
 	if streamer == nil {
 		http.Error(w, "Streamer not found", http.StatusNotFound)
@@ -339,11 +447,20 @@ func (s *Server) handlePlayerRestart(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
-	if _, ok := s.checkAuth(r); !ok {
+	user, ok := s.checkAuth(r)
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
 	mount := r.FormValue("mount")
+	// Per-mount authorisation, as the JSON API's requireMountAccess does.
+	// These handlers only checked that the caller was logged in, so a
+	// DJ whose Mounts map holds /a could drive, wipe or browse /b.
+	if !s.hasAccess(user, mount) {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
 	streamer := s.StreamerM.GetStreamer(mount)
 	if streamer == nil {
 		http.Error(w, "Streamer not found", http.StatusNotFound)
@@ -359,11 +476,20 @@ func (s *Server) handlePlayerNext(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
-	if _, ok := s.checkAuth(r); !ok {
+	user, ok := s.checkAuth(r)
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
 	mount := r.FormValue("mount")
+	// Per-mount authorisation, as the JSON API's requireMountAccess does.
+	// These handlers only checked that the caller was logged in, so a
+	// DJ whose Mounts map holds /a could drive, wipe or browse /b.
+	if !s.hasAccess(user, mount) {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
 	streamer := s.StreamerM.GetStreamer(mount)
 	if streamer == nil {
 		http.Error(w, "Streamer not found", http.StatusNotFound)
@@ -375,12 +501,18 @@ func (s *Server) handlePlayerNext(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handlePlayerFiles(w http.ResponseWriter, r *http.Request) {
-	if _, ok := s.checkAuth(r); !ok {
+	user, ok := s.checkAuth(r)
+	if !ok {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
 	mount := r.URL.Query().Get("mount")
+	// Browsing a mount's music directory is per-mount data.
+	if !s.hasAccess(user, mount) {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
 	subDir := r.URL.Query().Get("path")
 	streamer := s.StreamerM.GetStreamer(mount)
 	if streamer == nil {
@@ -468,11 +600,20 @@ func (s *Server) handlePlayerPlaylistAction(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
-	if _, ok := s.checkAuth(r); !ok {
+	user, ok := s.checkAuth(r)
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
 	mount := r.FormValue("mount")
+	// Per-mount authorisation, as the JSON API's requireMountAccess does.
+	// These handlers only checked that the caller was logged in, so a
+	// DJ whose Mounts map holds /a could drive, wipe or browse /b.
+	if !s.hasAccess(user, mount) {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
 	action := r.FormValue("action")
 	relPath := r.FormValue("file")
 
@@ -728,6 +869,10 @@ func (s *Server) handleAutoDJStudio(w http.ResponseWriter, r *http.Request) {
 
 	mount := r.URL.Query().Get("mount")
 	logger.L.Infof("Studio: Requested mount: %s", mount)
+	if mount != "" && !s.hasAccess(user, mount) {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
 
 	streamer := s.StreamerM.GetStreamer(mount)
 	if streamer == nil {

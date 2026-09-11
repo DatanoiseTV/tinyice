@@ -104,7 +104,9 @@ func (s *Server) handleApprovePendingUser(w http.ResponseWriter, r *http.Request
 		Mounts:       make(map[string]string),
 		LinkedEmails: []string{pending.Email},
 	}
+	s.Config.LockMaps()
 	s.Config.Users[req.Username] = newUser
+	s.Config.UnlockMaps()
 
 	s.Config.PendingUsers = append(s.Config.PendingUsers[:pendingIdx], s.Config.PendingUsers[pendingIdx+1:]...)
 	s.Config.SaveConfig()

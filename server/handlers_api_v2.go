@@ -244,9 +244,13 @@ func (s *Server) apiCreateStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if user.Role == config.RoleSuperAdmin {
+		s.Config.LockMaps()
 		s.Config.Mounts[body.Mount] = hashed
+		s.Config.UnlockMaps()
 	} else {
+		s.Config.LockMaps()
 		user.Mounts[body.Mount] = hashed
+		s.Config.UnlockMaps()
 	}
 	s.Config.SaveConfig()
 	jsonResponse(w, map[string]string{"status": "created", "mount": body.Mount})
@@ -311,7 +315,9 @@ func (s *Server) apiUpdateStream(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if inGlobal {
+			s.Config.LockMaps()
 			s.Config.Mounts[body.Mount] = hashed
+			s.Config.UnlockMaps()
 		} else {
 			owningUser.Mounts[body.Mount] = hashed
 		}
@@ -322,9 +328,13 @@ func (s *Server) apiUpdateStream(w http.ResponseWriter, r *http.Request) {
 			s.Config.DisabledMounts = make(map[string]bool)
 		}
 		if *body.Enabled {
+			s.Config.LockMaps()
 			delete(s.Config.DisabledMounts, body.Mount)
+			s.Config.UnlockMaps()
 		} else {
+			s.Config.LockMaps()
 			s.Config.DisabledMounts[body.Mount] = true
+			s.Config.UnlockMaps()
 			// Kick the live source if it's currently connected so the new
 			// disabled state takes effect immediately.
 			if st, ok := s.Relay.GetStream(body.Mount); ok {
@@ -338,9 +348,13 @@ func (s *Server) apiUpdateStream(w http.ResponseWriter, r *http.Request) {
 			s.Config.VisibleMounts = make(map[string]bool)
 		}
 		if *body.Visible {
+			s.Config.LockMaps()
 			s.Config.VisibleMounts[body.Mount] = true
+			s.Config.UnlockMaps()
 		} else {
+			s.Config.LockMaps()
 			delete(s.Config.VisibleMounts, body.Mount)
+			s.Config.UnlockMaps()
 		}
 		if st, ok := s.Relay.GetStream(body.Mount); ok {
 			st.SetVisible(*body.Visible)
@@ -371,10 +385,18 @@ func (s *Server) apiDeleteStream(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, "Forbidden", http.StatusForbidden)
 		return
 	}
+	s.Config.LockMaps()
 	delete(s.Config.Mounts, mount)
+	s.Config.UnlockMaps()
+	s.Config.LockMaps()
 	delete(s.Config.DisabledMounts, mount)
+	s.Config.UnlockMaps()
+	s.Config.LockMaps()
 	delete(s.Config.VisibleMounts, mount)
+	s.Config.UnlockMaps()
+	s.Config.LockMaps()
 	delete(user.Mounts, mount)
+	s.Config.UnlockMaps()
 	s.Relay.RemoveStream(mount)
 	s.Config.SaveConfig()
 	jsonResponse(w, map[string]string{"status": "deleted"})
@@ -1844,7 +1866,9 @@ func (s *Server) apiDeleteTranscoder(w http.ResponseWriter, r *http.Request) {
 		} else {
 			s.TranscoderM.StopTranscoder(tc.OutputMount)
 			if tc.Visibility != "" {
+				s.Config.LockMaps()
 				delete(s.Config.VisibleMounts, tc.OutputMount)
+				s.Config.UnlockMaps()
 			}
 			found = true
 		}
@@ -1930,12 +1954,14 @@ func (s *Server) apiCreateUser(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, "Failed to hash password: "+err.Error(), http.StatusBadRequest)
 		return
 	}
+	s.Config.LockMaps()
 	s.Config.Users[body.Username] = &config.User{
 		Username: body.Username,
 		Password: hp,
 		Role:     body.Role,
 		Mounts:   make(map[string]string),
 	}
+	s.Config.UnlockMaps()
 	s.Config.SaveConfig()
 	jsonResponse(w, map[string]string{"status": "created", "username": body.Username})
 	s.Audit(r, "user_created", "user", body.Username, body.Role)
@@ -2019,7 +2045,9 @@ func (s *Server) apiDeleteUser(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, "User not found", http.StatusNotFound)
 		return
 	}
+	s.Config.LockMaps()
 	delete(s.Config.Users, username)
+	s.Config.UnlockMaps()
 	// Invalidate any live sessions belonging to the deleted user; otherwise
 	// their cookie keeps working until it expires even though the account
 	// no longer exists.
