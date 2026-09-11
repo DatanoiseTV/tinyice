@@ -1,7 +1,9 @@
 package relay
 
 import (
+	"bufio"
 	"bytes"
+	"net"
 	"strings"
 	"testing"
 	"time"
@@ -95,5 +97,118 @@ func TestMPDCurrentSongDoesNotRecursivelyRLock(t *testing.T) {
 			}
 			close(stop)
 		})
+	}
+}
+
+// With mpd_password set, a correct `password` must unlock the connection.
+// The refactor into dispatchCommand lost the assignment to the
+// connection's auth flag, so every command after a correct password was
+// still "permission denied" and password-protected MPD was unusable.
+func TestMPDPasswordUnlocksConnection(t *testing.T) {
+	s, _ := newTestStreamer(t)
+	m := NewMPDServer("0", "secret", s)
+	client, server := net.Pipe()
+	defer client.Close()
+	go m.handleConnection(server)
+
+	rd := bufio.NewReader(client)
+	if greeting, _ := rd.ReadString('\n'); !strings.HasPrefix(greeting, "OK MPD") {
+		t.Fatalf("greeting = %q", greeting)
+	}
+	send := func(line string) string {
+		client.SetDeadline(time.Now().Add(2 * time.Second))
+		if _, err := client.Write([]byte(line + "\n")); err != nil {
+			t.Fatal(err)
+		}
+		var out strings.Builder
+		for {
+			l, err := rd.ReadString('\n')
+			if err != nil {
+				t.Fatalf("reading reply to %q: %v (so far %q)", line, err, out.String())
+			}
+			out.WriteString(l)
+			if strings.HasPrefix(l, "OK") || strings.HasPrefix(l, "ACK") {
+				return out.String()
+			}
+		}
+	}
+	if r := send("status"); !strings.Contains(r, "ACK") {
+		t.Fatalf("status before password should be denied, got %q", r)
+	}
+	if r := send(`password "secret"`); !strings.HasPrefix(r, "OK") {
+		t.Fatalf("correct password rejected: %q", r)
+	}
+	if r := send("status"); !strings.Contains(r, "state:") {
+		t.Fatalf("status after correct password still denied: %q", r)
+	}
+}
+
+// `idle` must return immediately on `noidle`, and a command sent while
+// idle must be executed rather than answered "unknown command". The
+// synchronous reader used to park the connection for up to 30 s with
+// the client's noidle unread — the ncmpcpp "every keypress freezes"
+// symptom — then answer it as an error against the wrong request.
+func TestMPDIdleIsInterruptible(t *testing.T) {
+	s, _ := newTestStreamer(t)
+	m := NewMPDServer("0", "", s)
+	client, server := net.Pipe()
+	defer client.Close()
+	go m.handleConnection(server)
+	rd := bufio.NewReader(client)
+	rd.ReadString('\n') // greeting
+
+	readReply := func(what string) string {
+		var out strings.Builder
+		for {
+			client.SetReadDeadline(time.Now().Add(2 * time.Second))
+			l, err := rd.ReadString('\n')
+			if err != nil {
+				t.Fatalf("%s: %v (so far %q)", what, err, out.String())
+			}
+			out.WriteString(l)
+			if strings.HasPrefix(l, "OK") || strings.HasPrefix(l, "ACK") {
+				return out.String()
+			}
+		}
+	}
+
+	// net.Pipe writes block until the server reads; a server parked in
+	// a non-interruptible idle never reads, so bound the write too.
+	write := func(line string) {
+		client.SetWriteDeadline(time.Now().Add(2 * time.Second))
+		if _, err := client.Write([]byte(line)); err != nil {
+			t.Fatalf("server stopped reading while idle (write %q: %v)", strings.TrimSpace(line), err)
+		}
+	}
+
+	// idle, then noidle: must come back promptly with OK.
+	write("idle\n")
+	time.Sleep(100 * time.Millisecond)
+	start := time.Now()
+	write("noidle\n")
+	if r := readReply("noidle"); !strings.HasPrefix(r, "OK") {
+		t.Fatalf("noidle reply = %q", r)
+	}
+	if d := time.Since(start); d > time.Second {
+		t.Fatalf("noidle took %v; idle was not interruptible", d)
+	}
+
+	// idle, then a real command: the idle ends (OK) and the command runs.
+	write("idle\n")
+	time.Sleep(100 * time.Millisecond)
+	write("status\n")
+	if r := readReply("idle end"); !strings.HasPrefix(r, "OK") {
+		t.Fatalf("idle should end with OK when a command arrives, got %q", r)
+	}
+	if r := readReply("status"); !strings.Contains(r, "state:") {
+		t.Fatalf("command sent during idle was not executed: %q", r)
+	}
+
+	// idle, then a player event: reported with the right subsystem.
+	write("idle\n")
+	time.Sleep(100 * time.Millisecond)
+	s.Play()
+	if r := readReply("idle event"); !strings.Contains(r, "changed: player") {
+		t.Fatalf("expected 'changed: player', got %q", r)
 	}
 }

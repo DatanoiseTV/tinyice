@@ -134,15 +134,46 @@ func (m *MPDServer) handleConnection(conn net.Conn) {
 	commandListOK := false
 	var commandListBuffer []string
 
-	for {
-		line, err := readMPDLine(reader, maxMPDLineLen)
-		if err != nil {
-			if err != io.EOF {
-				logger.L.Errorf("MPD: Connection error: %v", err)
-			} else {
-				logger.L.Debug("MPD: Connection closed by client")
+	// One goroutine owns the socket reads and hands lines over a channel,
+	// so the command loop and the `idle` wait can both select on client
+	// input. With synchronous reads, `idle` parked the connection for up
+	// to 30 s during which the client's `noidle` sat unread — every
+	// keypress in ncmpcpp/cantata froze — and when it was finally read
+	// it was answered "unknown command", desynchronising every reply
+	// after it. The goroutine exits when the connection closes (deferred
+	// above), which unblocks its read.
+	lines := make(chan string)
+	readErr := make(chan error, 1)
+	go func() {
+		defer close(lines)
+		for {
+			l, err := readMPDLine(reader, maxMPDLineLen)
+			if err != nil {
+				readErr <- err
+				return
 			}
-			return
+			lines <- l
+		}
+	}()
+	// pushback carries a command the client sent while we were idle
+	// (anything other than noidle), to be executed as the next command.
+	pushback := ""
+
+	for {
+		var line string
+		if pushback != "" {
+			line, pushback = pushback, ""
+		} else {
+			l, ok := <-lines
+			if !ok {
+				if err := <-readErr; err != io.EOF {
+					logger.L.Errorf("MPD: Connection error: %v", err)
+				} else {
+					logger.L.Debug("MPD: Connection closed by client")
+				}
+				return
+			}
+			line = l
 		}
 		line = strings.TrimSpace(line)
 		if line == "" {
@@ -166,6 +197,20 @@ func (m *MPDServer) handleConnection(conn net.Conn) {
 		}
 
 		switch cmd {
+		case "idle":
+			if commandList {
+				resp.ACK(5, 0, "idle", "idle not allowed in a command list")
+				writer.Flush()
+				continue
+			}
+			pushback = m.runIdle(args, lines, resp)
+			writer.Flush()
+			continue
+		case "noidle":
+			// Not idle: MPD answers a bare noidle with OK.
+			resp.OK()
+			writer.Flush()
+			continue
 		case "command_list_begin":
 			commandList = true
 			commandListOK = false
@@ -192,7 +237,7 @@ func (m *MPDServer) handleConnection(conn net.Conn) {
 				if len(parts) > 1 {
 					bargs = parts[1]
 				}
-				if !m.dispatchCommand(bcmd, bargs, resp) {
+				if !m.dispatchCommand(bcmd, bargs, resp, &authenticated) {
 					// On error, the ACK is already sent by dispatchCommand or it should be!
 					// Actually we need to send the correct [error@list_pos]
 					// Let's refine ACK to be more generic
@@ -227,14 +272,19 @@ func (m *MPDServer) handleConnection(conn net.Conn) {
 			continue
 		}
 
-		if m.dispatchCommand(cmd, args, resp) {
+		if m.dispatchCommand(cmd, args, resp, &authenticated) {
 			resp.OK()
 		}
 		writer.Flush()
 	}
 }
 
-func (m *MPDServer) dispatchCommand(cmd, args string, resp *MPDResponse) bool {
+// dispatchCommand runs one command. authenticated is the connection's
+// auth flag: the `password` command sets it, which the previous refactor
+// lost — the flag was a local in handleConnection that this function could
+// never reach, so with mpd_password set every command after a correct
+// `password` was still answered "permission denied".
+func (m *MPDServer) dispatchCommand(cmd, args string, resp *MPDResponse, authenticated *bool) bool {
 	switch cmd {
 	case "password":
 		// Constant-time compare — without this the comparison short-
@@ -242,7 +292,9 @@ func (m *MPDServer) dispatchCommand(cmd, args string, resp *MPDResponse) bool {
 		// of m.Password to an attacker probing one byte at a time.
 		// MPD passwords are short and plaintext (protocol-level) but
 		// timing leaks are still fixable.
-		if subtle.ConstantTimeCompare([]byte(args), []byte(m.Password)) == 1 {
+		// libmpdclient quotes string arguments: `password "secret"`.
+		if subtle.ConstantTimeCompare([]byte(strings.Trim(args, "\"")), []byte(m.Password)) == 1 {
+			*authenticated = true
 			return true
 		}
 		resp.ACK(3, 0, "password", "incorrect password")
@@ -263,9 +315,6 @@ func (m *MPDServer) dispatchCommand(cmd, args string, resp *MPDResponse) bool {
 		// Not implemented
 	case "ping":
 		// OK
-	case "idle":
-		m.handleIdle(resp)
-		return true
 	case "update":
 		m.streamer.ScanMusicDir()
 		resp.Field("updating_db", 1)
@@ -355,12 +404,45 @@ func (m *MPDServer) dispatchCommand(cmd, args string, resp *MPDResponse) bool {
 	return true
 }
 
-func (m *MPDServer) handleIdle(resp *MPDResponse) {
-	// Wait for events or timeout
-	select {
-	case <-m.streamer.idleCh:
-		resp.Field("changed", "playlist")
-	case <-time.After(30 * time.Second):
+// runIdle implements `idle [subsystems...]`: block until a subsystem
+// changes or the client sends `noidle`. Any other command sent while
+// idle also ends the idle (MPD tolerates this) and is returned so the
+// caller executes it next. Reports the subsystem the event named, not
+// always "playlist". Returns "" when nothing needs to be replayed.
+func (m *MPDServer) runIdle(args string, lines <-chan string, resp *MPDResponse) string {
+	wanted := strings.Fields(strings.ToLower(args))
+	interested := func(sub string) bool {
+		if len(wanted) == 0 {
+			return true
+		}
+		for _, w := range wanted {
+			if w == sub {
+				return true
+			}
+		}
+		return false
+	}
+	for {
+		select {
+		case sub := <-m.streamer.idleCh:
+			if !interested(sub) {
+				continue
+			}
+			resp.Field("changed", sub)
+			resp.OK()
+			return ""
+		case l, ok := <-lines:
+			if !ok {
+				return ""
+			}
+			l = strings.TrimSpace(l)
+			if strings.EqualFold(l, "noidle") || l == "" {
+				resp.OK()
+				return ""
+			}
+			resp.OK()
+			return l
+		}
 	}
 }
 
