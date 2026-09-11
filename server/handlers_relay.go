@@ -177,11 +177,17 @@ func (s *Server) applyTranscoderVisibilityToMap(tc *config.TranscoderConfig) {
 	}
 	switch tc.Visibility {
 	case "public":
+		s.Config.LockMaps()
 		s.Config.VisibleMounts[tc.OutputMount] = true
+		s.Config.UnlockMaps()
 	case "unlisted":
+		s.Config.LockMaps()
 		s.Config.VisibleMounts[tc.OutputMount] = false
+		s.Config.UnlockMaps()
 	default:
+		s.Config.LockMaps()
 		delete(s.Config.VisibleMounts, tc.OutputMount)
+		s.Config.UnlockMaps()
 	}
 }
 
@@ -229,7 +235,9 @@ func (s *Server) handleDeleteTranscoder(w http.ResponseWriter, r *http.Request) 
 		} else {
 			s.TranscoderM.StopTranscoder(tc.OutputMount)
 			if tc.Visibility != "" {
+				s.Config.LockMaps()
 				delete(s.Config.VisibleMounts, tc.OutputMount)
+				s.Config.UnlockMaps()
 			}
 		}
 	}
