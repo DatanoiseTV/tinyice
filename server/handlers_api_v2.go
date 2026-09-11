@@ -233,23 +233,9 @@ func (s *Server) apiCreateStream(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check access or existence
-	if !s.hasAccess(user, body.Mount) {
-		exists := false
-		if _, ok := s.Config.Mounts[body.Mount]; ok {
-			exists = true
-		}
-		if !exists {
-			for _, u := range s.Config.Users {
-				if _, ok := u.Mounts[body.Mount]; ok {
-					exists = true
-					break
-				}
-			}
-		}
-		if exists {
-			jsonError(w, "Mount taken", http.StatusConflict)
-			return
-		}
+	if !s.hasAccess(user, body.Mount) && s.mountTaken(body.Mount) {
+		jsonError(w, "Mount taken", http.StatusConflict)
+		return
 	}
 
 	hashed, err := config.HashPassword(body.Password)
@@ -2205,13 +2191,52 @@ func (s *Server) apiGetBranding(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// logoPathAllowed reports whether p is something /branding/logo may serve:
+// empty (no logo) or a regular file inside the branding directory that
+// apiUploadLogo writes to. Any authenticated user used to be able to set
+// LogoPath to an arbitrary string, and handleServeLogo hands whatever it
+// holds to http.ServeFile with no auth — so "tinyice.json" made the whole
+// config (relay/MPD/SMTP passwords, OIDC secret, token hashes) public.
+func logoPathAllowed(p string) bool {
+	if p == "" {
+		return true
+	}
+	base, err := filepath.Abs("branding")
+	if err != nil {
+		return false
+	}
+	abs, err := filepath.Abs(p)
+	if err != nil {
+		return false
+	}
+	if resolved, err := filepath.EvalSymlinks(abs); err == nil {
+		abs = resolved
+	}
+	if resolvedBase, err := filepath.EvalSymlinks(base); err == nil {
+		base = resolvedBase
+	}
+	rel, err := filepath.Rel(base, abs)
+	if err != nil || rel == "." || strings.HasPrefix(rel, "..") {
+		return false
+	}
+	info, err := os.Stat(abs)
+	return err == nil && info.Mode().IsRegular()
+}
+
 func (s *Server) apiUpdateBranding(w http.ResponseWriter, r *http.Request) {
 	if !s.isCSRFSafe(r) {
 		jsonError(w, "Forbidden", http.StatusForbidden)
 		return
 	}
-	if _, ok := s.checkAuth(r); !ok {
+	user, ok := s.checkAuth(r)
+	if !ok {
 		jsonError(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+	// Branding is server-wide; only a superadmin may change it, matching
+	// apiUpdateSettings. Previously any DJ-role account could.
+	if user.Role != config.RoleSuperAdmin {
+		jsonError(w, "Forbidden", http.StatusForbidden)
 		return
 	}
 
@@ -2237,6 +2262,10 @@ func (s *Server) apiUpdateBranding(w http.ResponseWriter, r *http.Request) {
 		s.Config.AccentColor = *body.AccentColor
 	}
 	if body.LogoPath != nil {
+		if !logoPathAllowed(*body.LogoPath) {
+			jsonError(w, "logo_path must be empty or a file uploaded via /api/branding/logo", http.StatusBadRequest)
+			return
+		}
 		s.Config.LogoPath = *body.LogoPath
 	}
 	if body.LandingMarkdown != nil {
@@ -2299,11 +2328,16 @@ func (s *Server) apiUploadLogo(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleServeLogo(w http.ResponseWriter, r *http.Request) {
-	if s.Config.LogoPath == "" {
+	// Re-checked at serve time as well as at write time, so a LogoPath
+	// that predates the validation (or was hand-edited into the config)
+	// still can't expose an arbitrary file. ServeFile would also happily
+	// render a directory listing for a directory path.
+	p := s.Config.LogoPath
+	if p == "" || !logoPathAllowed(p) {
 		http.NotFound(w, r)
 		return
 	}
-	http.ServeFile(w, r, s.Config.LogoPath)
+	http.ServeFile(w, r, p)
 }
 
 // ---------------------------------------------------------------------------

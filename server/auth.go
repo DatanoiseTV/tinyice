@@ -396,9 +396,20 @@ func (s *Server) isWhitelisted(ipStr string) bool {
 	return false
 }
 
+// isCSRFSafe is called by handlers that mutate state. It deliberately
+// does NOT bless GET/HEAD/OPTIONS: every form handler here reads its
+// parameters with r.FormValue, which merges the query string, and none
+// of them checked r.Method — so a GET with a query string was a complete
+// mutation, and the session cookie is SameSite=Lax, which browsers DO
+// send on a top-level GET navigation from another site. The old GET
+// whitelist therefore turned every mutating route into a one-click CSRF
+// (/admin/add-user?username=..., /admin/autodj/add?song_command=... which
+// is a shell exec). A mutating handler reached by GET now gets 403.
+// Handlers that legitimately serve reads on GET check r.Method before
+// calling this.
 func (s *Server) isCSRFSafe(r *http.Request) bool {
 	if r.Method == http.MethodGet || r.Method == http.MethodHead || r.Method == http.MethodOptions {
-		return true
+		return false
 	}
 
 	// JSON API endpoints are inherently CSRF-safe: the Content-Type: application/json

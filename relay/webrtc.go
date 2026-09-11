@@ -8,6 +8,7 @@ import (
 	"io"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/DatanoiseTV/tinyice/logger"
@@ -213,11 +214,35 @@ func (wm *WebRTCManager) HandleSourceOffer(mount string, offer webrtc.SessionDes
 		}
 	})
 
+	// pion invokes OnTrack once per remote track, each on its own
+	// goroutine that nothing recovers. An offer carrying audio+video (a
+	// browser with getUserMedia({audio, video}), or a WHIP tool that adds
+	// a video track) therefore ran this closure twice: two pumps wrote
+	// interleaved Ogg pages into the same Stream.Buffer, and when the
+	// publisher left, the second deferred close(doneCh) panicked with
+	// "close of closed channel" and took the whole process down. One
+	// track owns the pump; the rest are declined; doneCh closes once.
+	var pumpClaimed atomic.Bool
+	var doneOnce sync.Once
 	peerConnection.OnTrack(func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
+		defer func() {
+			if r := recover(); r != nil {
+				logger.L.Errorw("WebRTC Source: track pump panicked", "mount", mount, "panic", fmt.Sprintf("%v", r))
+			}
+		}()
+		codec := track.Codec().MimeType
+		if !strings.EqualFold(codec, webrtc.MimeTypeOpus) {
+			logger.L.Warnw("WebRTC Source: ignoring non-Opus track", "track", track.ID(), "codec", codec, "mount", mount)
+			return
+		}
+		if !pumpClaimed.CompareAndSwap(false, true) {
+			logger.L.Warnw("WebRTC Source: ignoring additional audio track; the first one feeds the mount", "track", track.ID(), "mount", mount)
+			return
+		}
 		logger.L.Infow("WebRTC Source: Received track", "track", track.ID(), "mount", mount)
 		// doneCh handshake with a successor source — close on exit so
 		// the next HandleSourceOffer can stop waiting for us.
-		defer close(doneCh)
+		defer doneOnce.Do(func() { close(doneCh) })
 
 		stream := wm.relay.GetOrCreateStream(mount)
 		stream.mu.Lock()
@@ -306,7 +331,15 @@ func (wm *WebRTCManager) streamToTrack(ctx context.Context, pc *webrtc.PeerConne
 		select {
 		case <-ctx.Done():
 			return
-		case <-signal:
+		case _, ok := <-signal:
+			// Stream.Close / DisconnectListeners close the signal
+			// channel. A closed channel is always ready, so without
+			// this check the loop spun at 100% of a core forever on a
+			// mount that went away before the viewer found its first
+			// page. Mirrors StreamReader in io.go.
+			if !ok {
+				return
+			}
 			n, next, _ := stream.Buffer.ReadAt(offset, syncBuf)
 			if n == 0 {
 				continue

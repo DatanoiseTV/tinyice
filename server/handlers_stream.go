@@ -460,9 +460,25 @@ func (s *Server) handleListener(w http.ResponseWriter, r *http.Request) {
 	var primaryFirstSeen time.Time
 	const fallbackHysteresis = 30 * time.Second
 
+	// served flips once headers + data have gone to this client. It
+	// decides what "both primary and fallback are down" means: for a
+	// listener mid-stream we wait for either to return (they already
+	// have a response; players don't reconnect on their own), but for a
+	// fresh connection we answer 404 like a fallback-less mount would.
+	// Previously every connection took the wait path, so a station with
+	// a fallback configured and both mounts down held every listener
+	// request open forever with no headers, never noticed the client
+	// hanging up (the loop checked s.done but not r.Context()), and
+	// parked one goroutine plus a ticker per player reconnect.
+	served := false
+	var outageSince time.Time
+	const maxOutageWait = 2 * time.Minute
+
 	for {
 		select {
 		case <-s.done:
+			return
+		case <-r.Context().Done():
 			return
 		default:
 		}
@@ -495,8 +511,24 @@ func (s *Server) handleListener(w http.ResponseWriter, r *http.Request) {
 			}
 			if mount != originalMount {
 				mount = originalMount
-				time.Sleep(1 * time.Second)
-				continue
+				if served {
+					if outageSince.IsZero() {
+						outageSince = time.Now()
+					}
+					if time.Since(outageSince) > maxOutageWait {
+						logger.L.Infow("Listener: primary and fallback down too long, dropping", "mount", originalMount)
+						return
+					}
+					select {
+					case <-r.Context().Done():
+						return
+					case <-s.done:
+						return
+					case <-time.After(1 * time.Second):
+					}
+					continue
+				}
+				// Fresh connection with nothing to fall back to: report it.
 			}
 			// Only count as a scan attempt when the mount is something
 			// we've never known — a configured mount that's currently
@@ -549,6 +581,8 @@ func (s *Server) handleListener(w http.ResponseWriter, r *http.Request) {
 			flusher.Flush()
 		}
 
+		served = true
+		outageSince = time.Time{}
 		if !s.serveStreamData(w, r, stream, id, originalMount, mount, recoveryTicker, metaint) {
 			return
 		}

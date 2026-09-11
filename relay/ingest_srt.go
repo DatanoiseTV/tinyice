@@ -158,6 +158,7 @@ func (ss *SRTServer) IsRunning() bool {
 // broadcasting extracted audio to the appropriate TinyIce stream.
 func (ss *SRTServer) handlePublish(conn srt.Conn) {
 	defer conn.Close()
+	defer recoverIngest("srt", conn.RemoteAddr())
 
 	remoteAddr := conn.RemoteAddr()
 	started := time.Now()

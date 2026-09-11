@@ -152,7 +152,13 @@ type Stream struct {
 //	    // Handle Ogg/Opus specific logic
 //	}
 func (s *Stream) IsOgg() bool {
+	// ContentType is written under s.mu by every ingest (source connect,
+	// AutoDJ track start, WebRTC OnTrack); read it the same way. No
+	// caller holds s.mu when calling this (audited), so the RLock here
+	// is not recursive.
+	s.mu.RLock()
 	ct := strings.ToLower(s.ContentType)
+	s.mu.RUnlock()
 	return strings.Contains(ct, "ogg") || strings.Contains(ct, "opus")
 }
 

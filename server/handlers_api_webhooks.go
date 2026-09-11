@@ -266,6 +266,11 @@ func (s *Server) apiDeleteWebhook(w http.ResponseWriter, r *http.Request) {
 // SampleEventData advertises through the meta endpoint, so what they
 // see in the placeholder reference is exactly what they receive.
 func (s *Server) apiTestWebhook(w http.ResponseWriter, r *http.Request) {
+	// Sends an outbound request — a side effect, so not on GET.
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	if !s.requireSuperAdminJSON(w, r) {
 		return
 	}

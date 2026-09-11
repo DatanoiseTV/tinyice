@@ -1026,7 +1026,10 @@ func (sm *StreamerManager) runStreamerLoop(ctx context.Context, s *Streamer) {
 		case <-ctx.Done():
 			return
 		default:
-			if s.State != StatePlaying {
+			s.mu.RLock()
+			state := s.State
+			s.mu.RUnlock()
+			if state != StatePlaying {
 				// Release the source label while parked: a stopped
 				// AutoDJ is not a live source, and leaving the field
 				// set would both show the mount as sourced in the admin
