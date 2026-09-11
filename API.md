@@ -230,7 +230,7 @@ Returns real-time server statistics every 500ms.
       "shuffle": false,
       "loop": true,
       "queue": [],
-      "playlist": []
+      "playlist_version": 17
     }
   ],
   "visible_mounts": {"/live": true},
@@ -248,8 +248,11 @@ Returns real-time server statistics every 500ms.
 elapsed in the current track (0 unless playing) and `duration` is `0` when
 the input format doesn't expose a track length up-front. `current_id` is
 the id of the track actually playing, `-1` when it came from the queue or
-an external song command. `queue` and `playlist` entries are
-`{"title": …, "path": …, "id": …}`.
+an external song command. `queue` entries are
+`{"title": …, "path": …, "id": …}`. The event does not carry the playlist
+itself: `playlist_version` bumps on every playlist mutation, and clients
+fetch `/api/autodj/{mount}/playlist` when it changes (the array was
+removed from the event in 2.8.0 — it was ~99% of the feed's bytes).
 
 Note that `autodj` events are only emitted on the authenticated
 `/admin/events` feed, not on the public `/events` one.
