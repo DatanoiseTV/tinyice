@@ -5,6 +5,38 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.8.2] - 2026-09-11
+
+### Security
+
+- **Any DJ could store HTML at `/branding/logo`** — the upload had no role
+  check and trusted the file extension, and the logo is served from the
+  site's origin: stored XSS against every visitor, the superadmin
+  included. Superadmin only, raster images only, content sniffed, and
+  served with `nosniff` and a sandboxing CSP.
+- **MPD `rm` deleted arbitrary `.pls` files** via a traversing playlist
+  name. Names are bare filenames now.
+- **`/admin/hotswap` restarted the server for any account**; superadmin
+  only.
+- **Icecast SOURCE passwords could be brute-forced** with no lockout;
+  they now count like every other credential check.
+- **API tokens could mint tokens**, so an expiring token could create a
+  permanent one. Token creation needs a logged-in session.
+- **A deleted original superadmin was recreated on every restart** with
+  its original password (legacy `admin_user` migration). The lift now
+  only bootstraps an empty user table.
+- **Rejected WebRTC offers leaked the peer connection** (four goroutines
+  plus tickers each) on the unauthenticated `/webrtc/offer`.
+- **Passkey login/begin** could grow server state without bound; pending
+  challenges are capped.
+
+### Fixed
+
+- **OIDC login behind a TLS-terminating reverse proxy** registered an
+  `http://` redirect URI and was refused by the provider. It now uses
+  `base_url`, else `X-Forwarded-Proto`/`Host` from a trusted proxy.
+- Poster uploads are limited to mounts with video and to decodable JPEGs.
+
 ## [2.8.1] - 2026-09-11
 
 ### Security
@@ -515,6 +547,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   this release line as `daf5368`). The previous full-lock fan-
   out was the dominant lock-contention vector under load.
 
+[2.8.2]: https://github.com/DatanoiseTV/tinyice/releases/tag/v2.8.2
 [2.8.1]: https://github.com/DatanoiseTV/tinyice/releases/tag/v2.8.1
 [2.8.0]: https://github.com/DatanoiseTV/tinyice/releases/tag/v2.8.0
 [2.7.0]: https://github.com/DatanoiseTV/tinyice/releases/tag/v2.7.0
