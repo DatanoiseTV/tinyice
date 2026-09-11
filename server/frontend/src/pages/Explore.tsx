@@ -25,11 +25,6 @@ export function Explore() {
       )
     })
 
-    sse.on('metadata', (evt) => {
-      streams.value = streams.value.map((s) =>
-        s.mount === evt.mount ? { ...s, title: evt.title, artist: evt.artist } : s
-      )
-    })
 
     return () => sse.close()
   }, [])

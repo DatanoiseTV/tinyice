@@ -276,15 +276,15 @@ export function Player() {
   useEffect(() => {
     const sse = createSSE('/events')
 
-    sse.on('metadata', (evt) => {
-      if (evt.mount === data.mount) {
-        title.value = evt.title
-        artist.value = evt.artist
-      }
-    })
-
     sse.on('stream', (evt) => {
       if (evt.mount !== data.mount) return
+      // Now-playing comes on the `stream` event (`title` = current song,
+      // `artist` = stream name — the same pairing the page was rendered
+      // with). This used to listen for a `metadata` event the server
+      // has never emitted, so the title shown was whatever was playing
+      // when the page loaded, forever.
+      if (typeof evt.title === 'string' && evt.title !== '') title.value = evt.title
+      if (typeof evt.artist === 'string' && evt.artist !== '') artist.value = evt.artist
       // Audience: prefer viewers (HLS / WHEP) when this is a video
       // mount; otherwise fall through to the raw listener count.
       const audience =
