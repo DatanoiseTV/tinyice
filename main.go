@@ -147,6 +147,27 @@ func main() {
 		cfg.SetupComplete = false
 	}
 
+	// A restart before the wizard finished (crash, systemd restart, the
+	// operator coming back tomorrow) used to boot with an EMPTY setup
+	// token while setup was still incomplete — and the completion handler
+	// compared the client's token against "" with ConstantTimeCompare,
+	// which reports two empty strings as equal. Anyone who could reach
+	// /setup/complete became superadmin. Mint a fresh token on every boot
+	// that still needs setup.
+	if !cfg.SetupComplete && setupToken == "" {
+		setupToken = generateRandomString(32)
+		fmt.Println("**************************************************")
+		fmt.Println("  SETUP NOT COMPLETE")
+		fmt.Println("")
+		fmt.Printf("  Open your browser and navigate to:\n")
+		fmt.Printf("    http://localhost:%s/setup\n", cfg.Port)
+		fmt.Println("")
+		fmt.Printf("  Setup Token: %s\n", setupToken)
+		fmt.Println("")
+		fmt.Println("  You will need this token to complete setup.")
+		fmt.Println("**************************************************")
+	}
+
 	if handleCommands(cfg) {
 		return
 	}
