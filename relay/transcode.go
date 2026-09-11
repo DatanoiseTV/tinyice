@@ -300,11 +300,17 @@ var shineBitRates = [16][4]int64{
 
 // applyShineBitrate reaches into a shine.Encoder and overrides the bitrate
 // (and its derived BitrateIndex / WholeSlotsPerFrame / FracSlotsPerFrame /
-// Slot_lag fields) so the encoded output actually respects the operator's
+// SlotLag fields) so the encoded output actually respects the operator's
 // bitrate choice. Returns false if the combination isn't supported by the
 // MPEG bitrate table for this sample rate.
+//
+// shine-mp3 has no bitrate parameter on NewEncoder (still hard-coded to
+// 128 as of v0.2.0), which is why this pokes the struct. The field names
+// are an unstable surface: v0.2.0 renamed Slot_lag to SlotLag and changed
+// CheckConfig's signature. The bitrate assertion in the transcode tests is
+// what catches the next rename.
 func applyShineBitrate(enc *shine.Encoder, sampleRate, bitrate int) bool {
-	if shine.CheckConfig(sampleRate, bitrate) == -1 {
+	if _, err := shine.CheckConfig(sampleRate, bitrate); err != nil {
 		return false
 	}
 	version := int(enc.Mpeg.Version)
@@ -328,7 +334,7 @@ func applyShineBitrate(enc *shine.Encoder, sampleRate, bitrate int) bool {
 		(float64(enc.Mpeg.Bitrate) * 1000.0 / float64(enc.Mpeg.BitsPerSlot))
 	enc.Mpeg.WholeSlotsPerFrame = int64(avg)
 	enc.Mpeg.FracSlotsPerFrame = avg - float64(enc.Mpeg.WholeSlotsPerFrame)
-	enc.Mpeg.Slot_lag = -enc.Mpeg.FracSlotsPerFrame
+	enc.Mpeg.SlotLag = -enc.Mpeg.FracSlotsPerFrame
 	if enc.Mpeg.FracSlotsPerFrame == 0 {
 		enc.Mpeg.Padding = 0
 	}
