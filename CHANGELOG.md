@@ -5,10 +5,20 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.8.1] - 2026-09-11
 
 ### Security
 
+- **Setup could be completed with an empty token after a restart.** A
+  restart before the first-run wizard finished booted with no setup
+  token, and the completion handler compared the client's token against
+  `""` with a constant-time compare that reports two empty strings as
+  equal — anyone reaching `/setup/complete` became superadmin. A fresh
+  token is minted (and printed) on every boot that still needs setup,
+  and an empty token is refused outright.
+- **Legacy `/admin/player/*` handlers never checked per-mount access.** A
+  DJ with `/a` could drive, clear, reorder, set metadata on and browse
+  the music directory of `/b`. All 17 handlers now enforce it.
 - **CSRF via GET on every legacy admin form handler.** `isCSRFSafe`
   whitelisted GET, the handlers read parameters from the query string and
   never checked the method, and the session cookie is `SameSite=Lax`
@@ -45,7 +55,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Listeners on a mount with a fallback hung forever** with no response
   when both mounts were down, leaking a goroutine per reconnect; fresh
   connections get 404, mid-stream listeners wait bounded and honour
-  disconnects.
+  disconnects. A fallback *cycle* (`/a → /b → /a`) additionally spun at
+  100% CPU; the fallback is now followed once per pass.
+- **`SaveConfig` raced handler map writes** — Go's fatal "concurrent map
+  iteration and map write", which ends the process. It runs from a
+  background timer (API-token last-used tracking) as well as from
+  handlers; an API client plus one admin action at the wrong moment was
+  enough. Config maps are now guarded by a lock taken by every mutator
+  and by the marshal.
+- **MPD password authentication could never succeed.** With
+  `mpd_password` set, a correct `password` was answered OK and every
+  following command "permission denied". Fixed, and the argument is
+  unquoted as libmpdclient sends it.
+- **MPD `idle` froze clients.** `noidle` sat unread for up to 30 s (every
+  keypress in ncmpcpp/cantata froze) and was then answered "unknown
+  command", desynchronising later replies. `idle` is interruptible,
+  reports the subsystem that changed, and play/pause/track changes now
+  wake idle clients.
+- **The player's now-playing title never updated**: it listened for a
+  `metadata` event the server never emits. It follows the `stream` event
+  now.
 
 ## [2.8.0] - 2026-09-11
 
@@ -486,6 +515,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   this release line as `daf5368`). The previous full-lock fan-
   out was the dominant lock-contention vector under load.
 
+[2.8.1]: https://github.com/DatanoiseTV/tinyice/releases/tag/v2.8.1
 [2.8.0]: https://github.com/DatanoiseTV/tinyice/releases/tag/v2.8.0
 [2.7.0]: https://github.com/DatanoiseTV/tinyice/releases/tag/v2.7.0
 [2.5.0]: https://github.com/DatanoiseTV/tinyice/releases/tag/v2.5.0
