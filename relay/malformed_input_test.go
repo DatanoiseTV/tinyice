@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"bytes"
 	"net"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -210,5 +212,28 @@ func TestMPDIdleIsInterruptible(t *testing.T) {
 	s.Play()
 	if r := readReply("idle event"); !strings.Contains(r, "changed: player") {
 		t.Fatalf("expected 'changed: player', got %q", r)
+	}
+}
+
+// MPD `rm` joined the client-supplied name into playlists/ unchecked, so
+// `rm "../../x"` deleted x.pls anywhere on disk.
+func TestMPDRmRejectsPathTraversal(t *testing.T) {
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	os.Chdir(dir)
+	t.Cleanup(func() { os.Chdir(orig) })
+	os.MkdirAll("playlists", 0755)
+	victim := filepath.Join(dir, "victim.pls")
+	os.WriteFile(victim, []byte("x"), 0644)
+
+	s, _ := newTestStreamer(t)
+	m := NewMPDServer("0", "", s)
+	var out bytes.Buffer
+	m.handleRm(`"../victim"`, NewMPDResponse(&out))
+	if _, err := os.Stat(victim); err != nil {
+		t.Fatal("rm with a traversing name deleted a file outside playlists/")
+	}
+	if !strings.Contains(out.String(), "ACK") {
+		t.Errorf("traversing name should be refused with ACK, got %q", out.String())
 	}
 }
