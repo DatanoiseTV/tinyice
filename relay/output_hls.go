@@ -503,7 +503,66 @@ func (h *HLSOutput) buildAVSegment(audioBatch, videoBatch []pesUnit, audioStream
 // PES per segment, approximate PTS derived from wall-clock segment
 // duration. Still correct for MP3 / Opus audio-only mounts where the
 // source doesn't hand us frame timestamps.
+// segmentLoopByteBuffer keeps the byte-buffer session alive across
+// source flaps the same way segmentLoopFramed does. The session returns
+// when the upstream Stream closes (source disconnect, RemoveStream,
+// health auto-removal); without this wrapper that return ended the
+// goroutine while the HLSOutput stayed registered, so an audio-only
+// mount's HLS playlist froze after the first source drop and never
+// recovered — every later viewer got the stale playlist. The first
+// segment after a resubscribe is flagged as a discontinuity so players
+// resync to the new source's timeline.
 func (h *HLSOutput) segmentLoopByteBuffer(ctx context.Context, audio *Track, video *Track) {
+	first := true
+	for ctx.Err() == nil {
+		h.runByteBufferSession(ctx, audio, video, !first)
+		if ctx.Err() != nil || h.relay == nil {
+			return
+		}
+		newAudio, newVideo := h.waitForFreshByteStreams(ctx)
+		if newAudio == nil {
+			return
+		}
+		audio, video = newAudio, newVideo
+		first = false
+		logger.L.Infow("HLS: resubscribed after source flap (byte path)",
+			"mount", h.mount, "has_video", video != nil)
+	}
+}
+
+// waitForFreshByteStreams is waitForFreshStreams without the FrameHub
+// requirement: the byte path only needs the Stream objects to exist.
+func (h *HLSOutput) waitForFreshByteStreams(ctx context.Context) (*Track, *Track) {
+	tick := time.NewTicker(500 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		as, aok := h.relay.GetStream(h.mount)
+		var vs *Stream
+		vok := h.videoSubMount == ""
+		if !vok {
+			vs, vok = h.relay.GetStream(h.videoSubMount)
+		}
+		if aok && vok && as != nil {
+			audioCodec := "mp3"
+			if as.IsOgg() {
+				audioCodec = "opus"
+			}
+			at := NewAudioTrack(as, audioCodec)
+			var vt *Track
+			if vs != nil {
+				vt = NewTrackFromStream(MediaVideo, "h264", vs)
+			}
+			return at, vt
+		}
+		select {
+		case <-ctx.Done():
+			return nil, nil
+		case <-tick.C:
+		}
+	}
+}
+
+func (h *HLSOutput) runByteBufferSession(ctx context.Context, audio *Track, video *Track, resubscribed bool) {
 	id := "hls-" + h.mount
 
 	audioOffset, audioSignal := audio.Stream.Subscribe(id, 8192)
@@ -545,6 +604,7 @@ func (h *HLSOutput) segmentLoopByteBuffer(ctx context.Context, audio *Track, vid
 		return t
 	}
 	prevAudioStreamType := currentAudioStreamType()
+	firstSegOfSession := resubscribed
 
 	flushIfReady := func(force bool) {
 		elapsed := time.Since(segStart)
@@ -552,7 +612,8 @@ func (h *HLSOutput) segmentLoopByteBuffer(ctx context.Context, audio *Track, vid
 			return
 		}
 		audioStreamType := currentAudioStreamType()
-		discontinuity := audioStreamType != prevAudioStreamType
+		discontinuity := audioStreamType != prevAudioStreamType || firstSegOfSession
+		firstSegOfSession = false
 		prevAudioStreamType = audioStreamType
 		segDur := h.config.SegmentDuration
 		var tsData []byte
