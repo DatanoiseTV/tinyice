@@ -5,6 +5,56 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.10.0] - 2026-09-16
+
+### Added
+
+- **Sandboxed directory browser for the AutoDJ music path.** The music
+  directory was a free-text field, so configuring one meant knowing an
+  absolute server path and typing it correctly — the existing file
+  browser only walks *inside* an already-configured directory, which
+  cannot help you choose one. `GET /api/autodj/browse` lists directories
+  (never files) at or below the configured media roots, reporting the
+  tracks and subfolders in each so the library is recognisable without
+  opening every candidate. Superadmin only, matching AutoDJ create and
+  update. Confinement is the same function the MPD path arguments use,
+  so a symlink inside a root that points out of it is refused rather
+  than followed.
+- **`media_roots`** bounds what that browser can list. Unset, it defaults
+  to the process working directory plus the music directory of every
+  configured AutoDJ — useful on an install that already works, and
+  exposing nothing the operator has not already pointed the server at.
+- **MPD control port and visibility are editable.** `mpd_enabled`,
+  `mpd_port` and `visible` have always existed in the config, the API and
+  the instance response, with no fields in the form: an MPD control port
+  could only be configured by editing tinyice.json by hand.
+- **Shuffle has a control.** It was in the model, the SSE event and the
+  API, and absent from the card.
+- **`burst_size` on mount creation** (2.9.0 shipped the handler side; the
+  form now sends the field it always collected).
+
+### Changed
+
+- **Deleting an AutoDJ asks first.** It took the playlist and queue with
+  it on the first click of a small icon sitting between the transport
+  controls.
+- A stopped AutoDJ names the playlist it would resume and its music
+  directory instead of showing only a track count, which is the answer
+  whenever that count is zero.
+
+### Fixed
+
+- **The OGG format was offered, stored, displayed and never
+  implemented.** Every encoder path is `Format == "opus"` with MP3 as the
+  fallback, so an AutoDJ configured as OGG encoded MP3 and advertised
+  `audio/mpeg` while every surface reported OGG. The option is gone, the
+  API rejects anything but mp3 and opus, and a stored format the encoder
+  does not implement is rewritten to mp3 on load — which cannot change
+  what any listener receives, since mp3 is what was already being
+  produced for that value. The update handler validates before tearing
+  the running streamer down, so a rejected format no longer costs the
+  operator their AutoDJ.
+
 ## [2.9.0] - 2026-09-16
 
 ### Security
@@ -648,6 +698,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   this release line as `daf5368`). The previous full-lock fan-
   out was the dominant lock-contention vector under load.
 
+[2.10.0]: https://github.com/DatanoiseTV/tinyice/releases/tag/v2.10.0
 [2.9.0]: https://github.com/DatanoiseTV/tinyice/releases/tag/v2.9.0
 [2.8.2]: https://github.com/DatanoiseTV/tinyice/releases/tag/v2.8.2
 [2.8.1]: https://github.com/DatanoiseTV/tinyice/releases/tag/v2.8.1
