@@ -5,6 +5,30 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.10.1] - 2026-09-16
+
+### Fixed
+
+- **`ScanMusicDir` never scanned the music directory.** It re-cached
+  titles for the tracks already in the playlist and returned, so on an
+  empty playlist it did nothing. The boot path calls it in exactly that
+  case (`if len(adj.Playlist) == 0`) and then calls `Play()`, so an
+  AutoDJ configured with nothing but a `music_dir` started, played
+  nothing and never appeared as a source; the Studio's SCAN button was
+  equally inert. It now walks the directory (skipping dotfiles and dot
+  directories) and appends every playable file not already present, so a
+  scan on a live playlist picks up new music without reordering or
+  re-adding what is queued.
+- **Loading a `.pls` was invisible in the Studio.** `LoadPlaylist`
+  replaced the playlist without bumping `playlist_version`, and since
+  2.8.0 the SSE `autodj` event carries only that version rather than the
+  playlist itself — so nothing told the UI to refetch. It also left the
+  playback cursor pointing into the old playlist, potentially past the
+  end of the new one.
+- The playable-extension list existed in three copies (scanner, file
+  browser, directory picker) and had begun to drift; it is now one
+  exported set.
+
 ## [2.10.0] - 2026-09-16
 
 ### Added
@@ -698,6 +722,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   this release line as `daf5368`). The previous full-lock fan-
   out was the dominant lock-contention vector under load.
 
+[2.10.1]: https://github.com/DatanoiseTV/tinyice/releases/tag/v2.10.1
 [2.10.0]: https://github.com/DatanoiseTV/tinyice/releases/tag/v2.10.0
 [2.9.0]: https://github.com/DatanoiseTV/tinyice/releases/tag/v2.9.0
 [2.8.2]: https://github.com/DatanoiseTV/tinyice/releases/tag/v2.8.2
