@@ -702,33 +702,31 @@ func (s *Stream) Broadcast(data []byte, relay *Relay) {
 	s.Buffer.Write(data)
 	s.mu.Unlock()
 
-	// 2. Signal phase — copy the listener channel slice under
-	//    RLock then drop the lock before sending. Subscribe /
-	//    Unsubscribe holds the write lock to mutate the map; an
-	//    Unsubscribe racing with a Broadcast can leave us holding a
-	//    reference to a channel that has been closed in the meantime.
-	//    A select-default does NOT protect against that — sending on
-	//    a closed channel panics regardless of select. The recover
-	//    inside the per-channel anon-func contains the panic to one
-	//    listener so a subscriber tearing down at the wrong moment
-	//    can't crash the source / encoder goroutine that called us.
+	// 2. Signal phase — under RLock, which is what makes it safe.
+	//
+	//    This used to snapshot the channels and send after dropping the
+	//    lock, with a recover() per send to contain the panic when
+	//    Close/Unsubscribe had closed a channel in between. That worked
+	//    in production but is a genuine data race (close vs send), which
+	//    the race detector reports on every run, and "recover from a
+	//    panic we know we are causing" is not a synchronisation strategy.
+	//
+	//    Holding RLock instead excludes Close and Unsubscribe (both take
+	//    the write lock) for the duration. The cost is bounded: every
+	//    send is non-blocking, so this is a map walk and at most one
+	//    channel write per listener — no I/O under the lock. RLock is
+	//    shared, so concurrent Broadcasts on other streams and readers
+	//    are unaffected.
 	s.mu.RLock()
-	chans := make([]chan struct{}, 0, len(s.listeners))
 	for _, ch := range s.listeners {
-		chans = append(chans, ch)
+		select {
+		case ch <- struct{}{}:
+			// signalled
+		default:
+			// already pending; slow listener, skip
+		}
 	}
 	s.mu.RUnlock()
-	for _, ch := range chans {
-		func(ch chan struct{}) {
-			defer func() { _ = recover() }()
-			select {
-			case ch <- struct{}{}:
-				// signalled
-			default:
-				// already pending; slow listener, skip
-			}
-		}(ch)
-	}
 }
 
 // Subscribe adds a listener and returns its starting offset and a signal channel.
