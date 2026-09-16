@@ -34,12 +34,15 @@ func recoverIngestErr(what string, remote interface{}, err *error) {
 	}
 }
 
-// confineToDir resolves rel against base and refuses anything that
-// escapes it. MPD path arguments (add, addid, lsinfo, load) come
-// straight off the wire and were joined into the music directory
+// ConfineToDir resolves rel against base and refuses anything that
+// escapes it, following symlinks on both sides so a link inside base
+// cannot point out of it. MPD path arguments (add, addid, lsinfo, load)
+// come straight off the wire and were joined into the music directory
 // unchecked, so "../../.." walked the filesystem — listing it via
-// lsinfo, and adding arbitrary files to the playlist.
-func confineToDir(base, rel string) (string, error) {
+// lsinfo, and adding arbitrary files to the playlist. The AutoDJ
+// directory browser confines against its media roots with the same
+// function.
+func ConfineToDir(base, rel string) (string, error) {
 	absBase, err := filepath.Abs(base)
 	if err != nil {
 		return "", err

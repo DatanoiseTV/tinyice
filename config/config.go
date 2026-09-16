@@ -289,6 +289,11 @@ type Config struct {
 	// Internal Streamer (AutoDJ)
 	AutoDJs []*AutoDJConfig `json:"autodjs"`
 
+	// MediaRoots bounds the AutoDJ directory browser. Only paths at or
+	// below one of these are listable; everything else is refused. Leave
+	// it unset to accept the defaults BrowsableRoots computes.
+	MediaRoots []string `json:"media_roots,omitempty"`
+
 	// Ingest (RTMP/SRT)
 	Ingest *IngestConfig `json:"ingest"`
 
