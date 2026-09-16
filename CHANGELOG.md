@@ -5,6 +5,107 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.9.0] - 2026-09-16
+
+### Security
+
+- **CSRF via cached HTTP Basic credentials.** `isCSRFSafe` treated a
+  request with no session cookie as safe, on the reasoning that it could
+  not be authenticated anyway. It could: `checkAuth` also accepts Basic,
+  and `/admin/metadata` answers with `WWW-Authenticate: Basic
+  realm="TinyIce"`, so a browser that has ever authenticated there
+  re-attaches those credentials to every same-origin request — including
+  one a third-party page triggers. A token-free cross-site POST to
+  `/admin/add-user` created a superadmin. Such requests are refused now;
+  Bearer-authenticated ones stay exempt, since a cross-origin form
+  cannot set an `Authorization` header.
+- **SSRF past `validateOutboundURL`.** The check only ever inspected
+  literal IPs in the string an operator typed. Both DNS and any redirect
+  the remote returns are under the other side's control, so a webhook
+  aimed at a hostname resolving to `169.254.169.254`, or at a public URL
+  that 302s to `127.0.0.1`, went straight through — and for a relay pull
+  the response body is broadcast to listeners. Every outbound client
+  (webhooks, YP directory, GeoIP downloads, relay pulls) now applies the
+  address policy at connect time, to the address actually being dialled,
+  on every hop of a redirect chain. The policy also gained RFC 6598
+  carrier-grade NAT space and `0.0.0.0/8`.
+
+### Fixed
+
+- **AutoDJ edits switched off settings the form never submitted.** Absent
+  `mpd_enabled` / `visible` / `loop` decoded as `false`, so any unrelated
+  edit disabled the MPD server and hid the mount. Omitted fields are now
+  left alone.
+- **A rejected AutoDJ update left the mount with no AutoDJ at all.** The
+  old instance was torn down and the new config saved before the restart
+  was attempted, so a taken MPD port produced a config describing an
+  AutoDJ that does not run. It now starts first and restores the previous
+  streamer and config on failure.
+- **The Studio's metadata switch could invert.** The endpoint always
+  flipped the flag while the UI posts the state it wants; a double click
+  or a second tab left the switch showing the opposite of reality.
+- **The volume knob jumped to full at 1%.** The endpoint guessed its unit
+  by range, which makes every value in 0..1 ambiguous. The body carries
+  an explicit `unit` now (`percent` / `fraction`); callers that send none
+  keep the old guess.
+- **"Load playlist" loaded nothing and then remembered it.** With no file
+  named, `filepath.Base("")` is `"."`, which was accepted and persisted
+  as `last_playlist`. The Studio now tracks the selected library entry.
+- **The mount create form's burst size was discarded.** It was posted as
+  `burstSize` and no handler read it, so every mount ran on the 512 KiB
+  default. It is `burst_size` on both sides now, stored per mount and
+  bounded by a cap the listener path also applies.
+- **The audit-log category filter hid 16 of the 36 recorded actions.** It
+  was a hand-written list of exact action names that had gone stale:
+  "Streams" hid every `mount_updated` / `mount_enabled` /
+  `mount_disabled` / kick, and webhooks had no category at all. Filtering
+  is prefix-based now, an unknown category matches nothing instead of
+  everything, and a test scans the handlers so a new action cannot fall
+  outside the filter.
+- **Login ignored `?next=`.** `/kiosk` has always redirected through it,
+  but every login landed on `/admin`. It is followed now, refusing
+  anything that is not a same-origin path.
+- **Disconnected sources stayed on screen until reload.** The SSE feeds
+  send one event per live mount per tick and nothing when a mount goes
+  away, so the dashboard, kiosk wall, landing page and explore
+  accumulated stale entries. They expire now, and the public feed carries
+  the source's actual live state rather than leaving the client to assume
+  that receiving an event means "on air".
+- **The admin `stream` event dropped half its fields.** `artist` was
+  hardcoded empty and the whole transcode group never left the server, so
+  the dashboard's "source format to output format" display had nothing to
+  render.
+- **The explore page marked video mounts as audio-only** — it built its
+  own stream list, which had drifted from the landing page's and omitted
+  `has_video`.
+- **The kiosk wall never showed the station name**, reading `title` from
+  the page data where the server injects `pageTitle`.
+- **A silent relay upstream parked its goroutine forever.** The idle
+  watchdog cancelled a context derived after the request was already in
+  flight, which does nothing to a parked `body.Read` — precisely the
+  stall it exists for.
+- **Every HLS source flap leaked two goroutines, permanently.** A
+  `FrameHub` subscriber's watcher waited on the caller's context alone,
+  so a subscription ended by `Close` stayed parked, and the framed loop
+  resubscribes with the same long-lived context on every flap.
+- **MPD `lsinfo` held the streamer lock across `os.ReadDir`**, stalling
+  playback for as long as the filesystem took.
+- **Pausing an Opus AutoDJ on a file that was not already 48 kHz** made
+  the encoder think it was behind schedule on resume and dump the rest of
+  the track into the ring buffer at full speed: the resampler sat on top
+  of the pause gate and hid it from the encoder's pacing.
+- Data race on `Buffer.Head` in `Subscribe` and the decoder hub.
+- A source connection whose `ResponseWriter` cannot carry a read deadline
+  is reported instead of silently running the ingest with no idle timeout.
+- `Login.tsx` and `Embed.tsx` typecheck again (a duplicate
+  `window.__TINYICE__` declaration), and `Embed` no longer throws when
+  opened without a mount.
+
+### Removed
+
+- The `streams` SSE event type and the landing page's subscription to it.
+  No handler has ever emitted that event.
+
 ## [2.8.2] - 2026-09-11
 
 ### Security
@@ -547,6 +648,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   this release line as `daf5368`). The previous full-lock fan-
   out was the dominant lock-contention vector under load.
 
+[2.9.0]: https://github.com/DatanoiseTV/tinyice/releases/tag/v2.9.0
 [2.8.2]: https://github.com/DatanoiseTV/tinyice/releases/tag/v2.8.2
 [2.8.1]: https://github.com/DatanoiseTV/tinyice/releases/tag/v2.8.1
 [2.8.0]: https://github.com/DatanoiseTV/tinyice/releases/tag/v2.8.0
