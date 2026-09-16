@@ -232,3 +232,97 @@ func TestPauseDoesNotCancelTrack(t *testing.T) {
 		t.Error("Stop did not cancel the in-flight track")
 	}
 }
+
+// A non-looping playlist that ran to the end left CurrentPos past the
+// last entry and the state Stopped; pressing Play re-entered the same
+// "past the end" branch and stopped again, so the AutoDJ could never be
+// restarted without editing its playlist.
+func TestPlayRestartsAfterNonLoopingPlaylistEnds(t *testing.T) {
+	s, _ := newTestStreamer(t)
+	s.Loop = false
+	s.SetPlaylist([]string{"/m/a.mp3", "/m/b.mp3"})
+	s.mu.Lock()
+	s.CurrentPos = len(s.Playlist) // where the loop leaves it at the end
+	s.State = StateStopped
+	s.mu.Unlock()
+
+	s.Play()
+
+	s.mu.RLock()
+	pos, state := s.CurrentPos, s.State
+	s.mu.RUnlock()
+	if state != StatePlaying {
+		t.Errorf("state = %v, want StatePlaying", state)
+	}
+	if pos != 0 {
+		t.Errorf("CurrentPos = %d after Play, want 0 — the cursor was left past the end", pos)
+	}
+}
+
+// Playlist edits must not move the playback cursor onto a different
+// track: removing an entry before the cursor shifted everything down and
+// silently skipped a song.
+func TestPlaylistEditsKeepCursorOnTheSameTrack(t *testing.T) {
+	s, _ := newTestStreamer(t)
+	s.SetPlaylist([]string{"/m/a.mp3", "/m/b.mp3", "/m/c.mp3", "/m/d.mp3"})
+	s.mu.Lock()
+	s.CurrentPos = 2 // next up is c.mp3
+	s.mu.Unlock()
+	nextUp := func() string {
+		s.mu.RLock()
+		defer s.mu.RUnlock()
+		if s.CurrentPos >= len(s.Playlist) {
+			return "(end)"
+		}
+		return s.Playlist[s.CurrentPos].Path
+	}
+	if got := nextUp(); got != "/m/c.mp3" {
+		t.Fatalf("setup: next up = %s", got)
+	}
+
+	s.RemoveFromPlaylist(0) // remove a.mp3, before the cursor
+	if got := nextUp(); got != "/m/c.mp3" {
+		t.Errorf("after removing an earlier entry, next up = %s, want /m/c.mp3", got)
+	}
+
+	s.RemoveFromPlaylist(2) // remove d.mp3, after the cursor
+	if got := nextUp(); got != "/m/c.mp3" {
+		t.Errorf("after removing a later entry, next up = %s, want /m/c.mp3", got)
+	}
+
+	// Move an earlier entry to after the cursor.
+	s.SetPlaylist([]string{"/m/a.mp3", "/m/b.mp3", "/m/c.mp3", "/m/d.mp3"})
+	s.mu.Lock()
+	s.CurrentPos = 2
+	s.mu.Unlock()
+	s.MovePlaylistItem(0, 3)
+	if got := nextUp(); got != "/m/c.mp3" {
+		t.Errorf("after moving an earlier entry past the cursor, next up = %s, want /m/c.mp3", got)
+	}
+}
+
+// The AutoDJ must not write into a mount a live encoder already owns —
+// it used to overwrite the claim and interleave its bytes with the
+// encoder's.
+func TestAutoDJDeclinesAMountWithALiveSource(t *testing.T) {
+	r := NewRelay(false, nil)
+	out := r.GetOrCreateStream("/contested")
+	if !out.TryClaimSource("203.0.113.9") {
+		t.Fatal("setup: encoder could not claim the mount")
+	}
+	if out.ClaimSourceIfFree(autoDJSourceLabel) {
+		t.Error("AutoDJ claimed a mount a live encoder owns")
+	}
+	if got := out.GetSourceIP(); got != "203.0.113.9" {
+		t.Errorf("source is now %q — the encoder's claim was overwritten", got)
+	}
+	// Once the encoder leaves, the AutoDJ may take it.
+	out.ReleaseSource()
+	if !out.ClaimSourceIfFree(autoDJSourceLabel) {
+		t.Error("AutoDJ could not claim a free mount")
+	}
+	// And re-claiming its own mount is fine.
+	if !out.ClaimSourceIfFree(autoDJSourceLabel) {
+		t.Error("AutoDJ could not re-claim its own mount")
+	}
+}

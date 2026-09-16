@@ -672,7 +672,12 @@ func (m *MPDServer) handleLsInfo(args string, resp *MPDResponse) {
 
 	dir := m.streamer.MusicDir
 	if args != "" {
-		dir = filepath.Join(m.streamer.MusicDir, strings.Trim(args, "\""))
+		confined, err := confineToDir(m.streamer.MusicDir, strings.Trim(args, "\""))
+		if err != nil {
+			resp.ACK(50, 0, "lsinfo", "no such directory")
+			return
+		}
+		dir = confined
 	}
 
 	entries, _ := os.ReadDir(dir)
@@ -687,15 +692,27 @@ func (m *MPDServer) handleLsInfo(args string, resp *MPDResponse) {
 
 func (m *MPDServer) handleAdd(args string, resp *MPDResponse) {
 	path := strings.Trim(args, "\"")
-	full := filepath.Join(m.streamer.MusicDir, path)
+	full, err := confineToDir(m.streamer.MusicDir, path)
+	if err != nil {
+		resp.ACK(50, 0, "add", "no such song")
+		return
+	}
 	m.streamer.AddToPlaylist(full)
 }
 
 func (m *MPDServer) handleAddId(args string, resp *MPDResponse) {
 	path := strings.Trim(args, "\"")
-	full := filepath.Join(m.streamer.MusicDir, path)
+	full, err := confineToDir(m.streamer.MusicDir, path)
+	if err != nil {
+		resp.ACK(50, 0, "addid", "no such song")
+		return
+	}
 	m.streamer.AddToPlaylist(full)
-	resp.Field("Id", len(m.streamer.GetPlaylist()))
+	// Report the entry's stable ID, which is what the client will hand
+	// back to deleteid/moveid — not the playlist length.
+	if pl := m.streamer.GetPlaylistInfo(); len(pl) > 0 {
+		resp.Field("Id", pl[len(pl)-1].ID)
+	}
 }
 
 func (m *MPDServer) handleDelete(args string, resp *MPDResponse) {
@@ -709,8 +726,13 @@ func (m *MPDServer) handleDelete(args string, resp *MPDResponse) {
 func (m *MPDServer) handleDeleteId(args string, resp *MPDResponse) {
 	id := -1
 	fmt.Sscanf(args, "%d", &id)
-	if id > 0 {
-		m.streamer.RemoveFromPlaylist(id - 1)
+	if id <= 0 {
+		resp.ACK(2, 0, "deleteid", "bad song id")
+		return
+	}
+	// By ID, not id-1: the two only coincide until the first removal.
+	if !m.streamer.RemoveFromPlaylistByID(id) {
+		resp.ACK(50, 0, "deleteid", "no such song")
 	}
 }
 
@@ -723,9 +745,12 @@ func (m *MPDServer) handleMove(args string, resp *MPDResponse) {
 func (m *MPDServer) handleMoveId(args string, resp *MPDResponse) {
 	var fromId, to int
 	fmt.Sscanf(args, "%d %d", &fromId, &to)
-	if fromId > 0 {
-		m.streamer.MovePlaylistItem(fromId-1, to)
+	idx := m.streamer.IndexOfPlaylistID(fromId)
+	if idx < 0 {
+		resp.ACK(50, 0, "moveid", "no such song")
+		return
 	}
+	m.streamer.MovePlaylistItem(idx, to)
 }
 
 func (m *MPDServer) handleListPlaylists(resp *MPDResponse) {

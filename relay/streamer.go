@@ -62,8 +62,9 @@ type Streamer struct {
 	mu     sync.RWMutex
 
 	fileCancel   context.CancelFunc
-	titleCache   map[string]string
-	titleFetchWg sync.WaitGroup
+	titleCache    map[string]string
+	titleFetching map[string]struct{} // in-flight tag reads, keyed by path
+	titleFetchWg  sync.WaitGroup
 
 	// Stats
 	BytesStreamed       int64
@@ -133,6 +134,14 @@ func NewStreamerManager(r *Relay, cfg *config.Config) *StreamerManager {
 func (s *Streamer) Play() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	// A non-looping playlist that ran to the end leaves CurrentPos past
+	// the last entry and the state Stopped. Without this rewind, pressing
+	// Play again re-entered the same "past the end, not looping" branch
+	// and stopped immediately — the AutoDJ could never be restarted
+	// without an edit to its playlist.
+	if s.CurrentPos >= len(s.Playlist) {
+		s.CurrentPos = 0
+	}
 	s.State = StatePlaying
 	s.signalStateChange()
 }
@@ -323,6 +332,7 @@ func (s *Streamer) RemoveFromPlaylistByID(id int) bool {
 	for i, p := range s.Playlist {
 		if p.ID == id {
 			s.Playlist = append(s.Playlist[:i], s.Playlist[i+1:]...)
+			s.shiftCursorAfterRemove(i)
 			s.PlaylistVersion++
 			s.broadcastIdle("playlist")
 			return true
@@ -394,23 +404,48 @@ func (s *Streamer) GetSongTitle(path string) string {
 	s.mu.RUnlock()
 
 	// Trigger background fetch if not already in progress
-	go s.fetchTitleAndCache(path)
+	s.fetchTitleAndCache(path)
 
 	// Fallback to filename if no title found (yet)
 	return filepath.Base(path)
 }
 
+// titleFetchSem bounds concurrent ID3 reads across all streamers. Each
+// fetch opens a file and parses tags; GetPlaylistInfo calls GetSongTitle
+// once per entry, so an uncapped fetch meant a 200-track playlist spawned
+// hundreds of goroutines and file handles at once — twice over, since
+// GetSongTitle spawned a goroutine that spawned another.
+var titleFetchSem = make(chan struct{}, 8)
+
 func (s *Streamer) fetchTitleAndCache(path string) {
+	// Deduplicate in-flight fetches for the same file: repeated calls
+	// (the playlist endpoint on every refresh) otherwise re-read the same
+	// tags concurrently.
+	s.mu.Lock()
+	if _, cached := s.titleCache[path]; cached {
+		s.mu.Unlock()
+		return
+	}
+	if s.titleFetching == nil {
+		s.titleFetching = make(map[string]struct{})
+	}
+	if _, busy := s.titleFetching[path]; busy {
+		s.mu.Unlock()
+		return
+	}
+	s.titleFetching[path] = struct{}{}
+	s.mu.Unlock()
+
 	s.titleFetchWg.Add(1)
 	go func() {
 		defer s.titleFetchWg.Done()
-
-		s.mu.Lock()
-		if _, ok := s.titleCache[path]; ok {
+		titleFetchSem <- struct{}{}
+		defer func() { <-titleFetchSem }()
+		defer func() {
+			s.mu.Lock()
+			delete(s.titleFetching, path)
 			s.mu.Unlock()
-			return // Already fetched by another concurrent call
-		}
-		s.mu.Unlock()
+		}()
 
 		title := filepath.Base(path)
 
@@ -628,6 +663,8 @@ func (s *Streamer) SetPlaylist(p []string) {
 		s.Playlist = append(s.Playlist, PlaylistSong{Path: path, ID: s.NextID})
 		s.NextID++
 	}
+	// A wholesale replacement invalidates the old cursor.
+	s.CurrentPos = 0
 	s.PlaylistVersion++
 	s.broadcastIdle("playlist")
 }
@@ -656,14 +693,33 @@ func (s *Streamer) RemoveFromPlaylist(idx int) {
 	defer s.mu.Unlock()
 	if idx >= 0 && idx < len(s.Playlist) {
 		s.Playlist = append(s.Playlist[:idx], s.Playlist[idx+1:]...)
+		s.shiftCursorAfterRemove(idx)
 		s.PlaylistVersion++
 		s.broadcastIdle("playlist")
+	}
+}
+
+// shiftCursorAfterRemove keeps CurrentPos pointing at the same upcoming
+// track after an entry is removed. CurrentPos is the index the loop will
+// read NEXT, so removing an entry before it shifts everything down by one
+// and, uncorrected, the playlist silently skipped a track (or replayed
+// one) on every edit. Caller holds s.mu.
+func (s *Streamer) shiftCursorAfterRemove(idx int) {
+	if idx < s.CurrentPos {
+		s.CurrentPos--
+	}
+	if s.CurrentPos < 0 {
+		s.CurrentPos = 0
+	}
+	if s.CurrentPos > len(s.Playlist) {
+		s.CurrentPos = len(s.Playlist)
 	}
 }
 
 func (s *Streamer) ClearPlaylist() {
 	s.mu.Lock()
 	s.Playlist = []PlaylistSong{}
+	s.CurrentPos = 0
 	s.PlaylistVersion++
 	s.mu.Unlock()
 	s.SavePlaylist()
@@ -1005,6 +1061,21 @@ func (sm *StreamerManager) GetStreamer(mount string) *Streamer {
 	return sm.instances[mount]
 }
 
+// IndexOfPlaylistID maps a stable playlist ID to its current index, or
+// -1. MPD's *id commands address entries by ID; treating the ID as
+// index+1 (as this server used to) targets the wrong track as soon as
+// anything has been removed.
+func (s *Streamer) IndexOfPlaylistID(id int) int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for i, p := range s.Playlist {
+		if p.ID == id {
+			return i
+		}
+	}
+	return -1
+}
+
 func (s *Streamer) MovePlaylistItem(from, to int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1016,6 +1087,14 @@ func (s *Streamer) MovePlaylistItem(from, to int) {
 	s.Playlist = append(s.Playlist[:from], s.Playlist[from+1:]...)
 	// Insert
 	s.Playlist = append(s.Playlist[:to], append([]PlaylistSong{item}, s.Playlist[to:]...)...)
+	// Track the cursor through the move so reordering doesn't skip or
+	// repeat the next track.
+	switch {
+	case from < s.CurrentPos && to >= s.CurrentPos:
+		s.CurrentPos--
+	case from >= s.CurrentPos && to < s.CurrentPos:
+		s.CurrentPos++
+	}
 	s.PlaylistVersion++
 	s.broadcastIdle("playlist")
 }
@@ -1244,6 +1323,14 @@ func (sm *StreamerManager) streamFile(ctx context.Context, s *Streamer, path str
 	// Update stream metadata under the output stream's mutex so concurrent
 	// Snapshot / listener reads see a coherent set of fields.
 	output := sm.relay.GetOrCreateStream(s.OutputMount)
+	// Don't write into a mount a live encoder owns. The label used to be
+	// assigned unconditionally, which both mislabelled the source in the
+	// admin UI and let the AutoDJ interleave its bytes with the
+	// encoder's — torn frames for every listener.
+	if !output.ClaimSourceIfFree(autoDJSourceLabel) {
+		return fmt.Errorf("mount %s already has a live source (%s); AutoDJ standing by",
+			s.OutputMount, output.GetSourceIP())
+	}
 	output.mu.Lock()
 	if s.InjectMetadata {
 		output.CurrentSong = s.CurrentFile
@@ -1255,7 +1342,6 @@ func (sm *StreamerManager) streamFile(ctx context.Context, s *Streamer, path str
 	// uses "relay-pull" and WebRTC uses "webrtc-source" — but the AutoDJ
 	// writes in-process and left the field empty, so the admin UI showed a
 	// playing AutoDJ mount as "No source" with a grey (offline) dot.
-	output.SourceIP = autoDJSourceLabel
 	output.Bitrate = fmt.Sprintf("%d", s.Bitrate)
 	if s.Format == "opus" {
 		output.ContentType = "audio/ogg"

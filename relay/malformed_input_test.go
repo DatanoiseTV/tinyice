@@ -237,3 +237,83 @@ func TestMPDRmRejectsPathTraversal(t *testing.T) {
 		t.Errorf("traversing name should be refused with ACK, got %q", out.String())
 	}
 }
+
+// MPD path arguments used to be joined into MusicDir unchecked, so
+// `add "../../etc/passwd"` put a file from outside the library into the
+// playlist and `lsinfo ".."` listed the parent directory.
+func TestMPDPathsConfinedToMusicDir(t *testing.T) {
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, "music"), 0755)
+	os.WriteFile(filepath.Join(dir, "outside.mp3"), []byte("x"), 0644)
+	os.WriteFile(filepath.Join(dir, "music", "inside.mp3"), []byte("x"), 0644)
+
+	s, _ := newTestStreamer(t)
+	s.MusicDir = filepath.Join(dir, "music")
+	m := NewMPDServer("0", "", s)
+
+	var out bytes.Buffer
+	m.handleAdd(`"../outside.mp3"`, NewMPDResponse(&out))
+	for _, e := range s.GetPlaylist() {
+		if strings.Contains(e, "outside.mp3") {
+			t.Fatalf("add escaped the music dir: %q", e)
+		}
+	}
+	if !strings.Contains(out.String(), "ACK") {
+		t.Errorf("escaping add should be refused, got %q", out.String())
+	}
+
+	out.Reset()
+	m.handleAdd(`"inside.mp3"`, NewMPDResponse(&out))
+	found := false
+	for _, e := range s.GetPlaylist() {
+		if strings.Contains(e, "inside.mp3") {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("a legitimate add inside the music dir was refused")
+	}
+}
+
+// MPD addresses playlist entries by stable ID. Treating the ID as
+// index+1 targeted the wrong track after any removal.
+func TestMPDDeleteIdUsesStableID(t *testing.T) {
+	s, _ := newTestStreamer(t)
+	s.MusicDir = t.TempDir()
+	s.NextID = 1 // StartStreamer does this; MPD song ids must be positive
+	for _, n := range []string{"a", "b", "c"} {
+		s.AddToPlaylist(filepath.Join(s.MusicDir, n+".mp3"))
+	}
+	ids := []int{}
+	for _, it := range s.GetPlaylistInfo() {
+		ids = append(ids, it.ID)
+	}
+	m := NewMPDServer("0", "", s)
+	var out bytes.Buffer
+	// Remove the first entry, so IDs and indices diverge.
+	m.handleDeleteId(strconvItoa(ids[0]), NewMPDResponse(&out))
+	// Now delete "c" by its ID; with index arithmetic this would hit "b".
+	out.Reset()
+	m.handleDeleteId(strconvItoa(ids[2]), NewMPDResponse(&out))
+
+	left := s.GetPlaylistInfo()
+	if len(left) != 1 || !strings.Contains(left[0].Path, "b.mp3") {
+		got := []string{}
+		for _, it := range left {
+			got = append(got, filepath.Base(it.Path))
+		}
+		t.Fatalf("playlist = %v, want only b.mp3 — deleteid used the wrong entry", got)
+	}
+}
+
+func strconvItoa(n int) string {
+	if n == 0 {
+		return "0"
+	}
+	var b []byte
+	for n > 0 {
+		b = append([]byte{byte('0' + n%10)}, b...)
+		n /= 10
+	}
+	return string(b)
+}

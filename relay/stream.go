@@ -196,6 +196,20 @@ func (s *Stream) TryClaimSource(ip string) bool {
 	return true
 }
 
+// ClaimSourceIfFree claims the mount for label unless a DIFFERENT source
+// already holds it. Returns false when someone else owns the mount, so an
+// in-process producer (the AutoDJ) can decline to write rather than
+// interleaving its bytes with a live encoder's into the same buffer.
+func (s *Stream) ClaimSourceIfFree(label string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.SourceIP != "" && s.SourceIP != label {
+		return false
+	}
+	s.SourceIP = label
+	return true
+}
+
 // ReleaseSource clears the source claim so the next TryClaimSource on
 // this stream succeeds. Idempotent.
 func (s *Stream) ReleaseSource() {
