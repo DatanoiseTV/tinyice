@@ -1385,28 +1385,38 @@ func (sm *StreamerManager) streamFile(ctx context.Context, s *Streamer, path str
 		}()
 	}
 
-	// Apply the streamer's volume setting (0..1) to the PCM stream before
-	// it reaches the encoder. When Volume is 1.0 the wrapper is a no-op.
-	var pcm io.Reader = decoder
-	if gain := s.GetVolume(); gain < 1.0 {
-		pcm = newGainReader(pcm, gain)
-	}
-	// Pause support: blocks the encoder's reads while paused so the track
-	// resumes in place rather than being cancelled.
-	pcm = newPauseGate(ctx, s, pcm)
+	pcm := s.buildPCMChain(ctx, decoder, decoder.SampleRate())
 
 	if s.Format == "opus" {
-		// Opus encoder is locked at 48 kHz; resample if the file is at a
-		// different rate so playback isn't sped up / slowed down.
-		if decoder.SampleRate() != 48000 {
-			pcm = NewLinearResampler(pcm, decoder.SampleRate(), 48000)
-		}
 		EncodeOpus(ctx, sm.relay, output, pcm, s.Bitrate, &s.BytesStreamed, true)
 	} else {
 		EncodeMP3(ctx, sm.relay, output, pcm, s.Bitrate, &s.BytesStreamed, true, decoder.SampleRate())
 	}
 
 	return nil
+}
+
+// buildPCMChain assembles the reader the encoder pulls from: volume, then
+// resampling for Opus, then the pause gate.
+//
+// The pause gate must stay OUTERMOST. The encoders discover it by type-
+// asserting the reader they were handed (pauseAware) so they can subtract
+// paused time from their wall-clock pacing. The resampler used to be
+// applied on top of the gate, which hid it: pausing an Opus AutoDJ on any
+// file that wasn't already 48 kHz left the encoder believing it was
+// behind schedule, and on resume it dumped the rest of the track into the
+// ring buffer as fast as the CPU allowed.
+func (s *Streamer) buildPCMChain(ctx context.Context, decoded io.Reader, srcRate int) io.Reader {
+	pcm := decoded
+	if gain := s.GetVolume(); gain < 1.0 {
+		pcm = newGainReader(pcm, gain)
+	}
+	if s.Format == "opus" && srcRate != 48000 {
+		// The Opus encoder is locked at 48 kHz; resample so playback
+		// isn't sped up / slowed down.
+		pcm = NewLinearResampler(pcm, srcRate, 48000)
+	}
+	return newPauseGate(ctx, s, pcm)
 }
 
 // gainReader multiplies every S16LE stereo sample it passes through by a

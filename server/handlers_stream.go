@@ -297,9 +297,19 @@ func (s *Server) handleSource(w http.ResponseWriter, r *http.Request) {
 		)
 	}()
 
+	// Report a ResponseWriter that can't carry a read deadline once,
+	// rather than silently running the ingest with no idle timeout: a
+	// wrapper that doesn't implement Unwrap makes every call here fail
+	// with ErrNotSupported and there is no other symptom until a
+	// half-open source parks the goroutine forever.
+	deadlineWarned := false
 	for {
 		if setReadDeadline != nil {
-			_ = setReadDeadline(time.Now().Add(sourceReadTimeout))
+			if err := setReadDeadline(time.Now().Add(sourceReadTimeout)); err != nil && !deadlineWarned {
+				deadlineWarned = true
+				logger.L.Warnw("Source: read deadline unsupported on this connection; a silent source will not time out",
+					"mount", mount, "error", err)
+			}
 		}
 		n, err := src.Read(buf)
 		if n > 0 {

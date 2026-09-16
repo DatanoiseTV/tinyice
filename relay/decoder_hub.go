@@ -255,8 +255,11 @@ func (h *DecoderHub) runPump(inputMount string, ps *pcmStream) {
 
 	var reader io.Reader
 	if isOgg {
+		// HeadOffset, not a bare Buffer.Head read: the source goroutine
+		// writes Head under the buffer mutex, so reading the field
+		// directly here is a data race against every Broadcast.
 		aligned := input.Buffer.FindNextPageBoundaryLocked(offset)
-		if aligned < input.Buffer.Head {
+		if aligned < input.Buffer.HeadOffset() {
 			offset = aligned
 		}
 		live := NewStreamReader(input.Buffer, offset, signal, pumpCtx, subID).WithOggSync(input)

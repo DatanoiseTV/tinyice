@@ -185,10 +185,23 @@ func (rm *RelayManager) runRelay(ctx context.Context, inst *RelayInstance) {
 	}
 }
 
+// relayIdleTimeout bounds how long a connected pull may go without
+// delivering a byte before it is torn down and retried. A var so tests
+// can shorten it.
+var relayIdleTimeout = 60 * time.Second
+
 func (rm *RelayManager) performPull(ctx context.Context, inst *RelayInstance) {
 	logger.L.Infow("Attempting to pull relay stream", "url", inst.URL)
 
-	req, err := http.NewRequestWithContext(ctx, "GET", inst.URL, nil)
+	// The idle watchdog set up below has to cancel the context the
+	// REQUEST was made with, or cancelling it does nothing to a parked
+	// body.Read. It used to derive a second context after the request was
+	// already in flight, so a silently half-closed upstream parked the
+	// pull goroutine forever — the exact stall the watchdog exists for.
+	pullCtx, pullCancel := context.WithCancel(ctx)
+	defer pullCancel()
+
+	req, err := http.NewRequestWithContext(pullCtx, "GET", inst.URL, nil)
 	if err != nil {
 		inst.mu.Lock()
 		inst.LastError = fmt.Sprintf("request creation failed: %v", err)
@@ -261,9 +274,6 @@ func (rm *RelayManager) performPull(ctx context.Context, inst *RelayInstance) {
 	// pulls). The watchdog fires the request context if no bytes arrive
 	// within the idle window, which propagates an i/o cancellation up
 	// to body.Read so the loop exits and runRelay can reconnect.
-	pullCtx, pullCancel := context.WithCancel(ctx)
-	defer pullCancel()
-	const relayIdleTimeout = 60 * time.Second
 	watchdog := time.AfterFunc(relayIdleTimeout, func() {
 		logger.L.Warnw("Relay pull went silent past idle window — reconnecting",
 			"mount", inst.Mount, "url", inst.URL, "idle_window", relayIdleTimeout.String())

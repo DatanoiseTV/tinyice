@@ -667,12 +667,17 @@ func (m *MPDServer) handlePlaylistId(args string, resp *MPDResponse) {
 }
 
 func (m *MPDServer) handleLsInfo(args string, resp *MPDResponse) {
+	// Read the music dir under the lock, then release it: os.ReadDir on a
+	// network-mounted library can block for seconds, and holding the
+	// streamer's RWMutex across it stalls the playback loop (which needs
+	// the write lock to advance a track) for exactly that long.
 	m.streamer.mu.RLock()
-	defer m.streamer.mu.RUnlock()
+	musicDir := m.streamer.MusicDir
+	m.streamer.mu.RUnlock()
 
-	dir := m.streamer.MusicDir
+	dir := musicDir
 	if args != "" {
-		confined, err := confineToDir(m.streamer.MusicDir, strings.Trim(args, "\""))
+		confined, err := confineToDir(musicDir, strings.Trim(args, "\""))
 		if err != nil {
 			resp.ACK(50, 0, "lsinfo", "no such directory")
 			return

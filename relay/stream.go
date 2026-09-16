@@ -787,6 +787,12 @@ func (s *Stream) Subscribe(id string, burstSize int) (int64, chan struct{}) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	// Read the head once, under the buffer's own mutex. Every branch
+	// below used to read the field directly — a data race against the
+	// source goroutine's Buffer.Write, and re-read often enough that two
+	// branches of one call could see different heads.
+	head := s.Buffer.HeadOffset()
+
 	// Create buffered signal channel for this listener
 	ch := make(chan struct{}, 1)
 	if atomic.LoadInt32(&s.closed) == 1 {
@@ -796,7 +802,7 @@ func (s *Stream) Subscribe(id string, burstSize int) (int64, chan struct{}) {
 		// Hand back a closed channel so the reader sees EOF immediately,
 		// which is what every caller does with a closed signal.
 		close(ch)
-		return s.Buffer.Head, ch
+		return head, ch
 	}
 	s.listeners[id] = ch
 
@@ -809,12 +815,12 @@ func (s *Stream) Subscribe(id string, burstSize int) (int64, chan struct{}) {
 	// normal between-frame jitter but small enough that pauses between
 	// songs / brief flaps don't replay.
 	if !s.LastDataReceived.IsZero() && time.Since(s.LastDataReceived) > 2*time.Second {
-		return s.Buffer.Head, ch
+		return head, ch
 	}
 
 	// Start at current head minus burst size for instant playback
 	// This gives the listener immediate audio data instead of waiting for new data
-	start := s.Buffer.Head - int64(burstSize)
+	start := head - int64(burstSize)
 	if start < 0 {
 		start = 0
 	}
@@ -826,13 +832,13 @@ func (s *Stream) Subscribe(id string, burstSize int) (int64, chan struct{}) {
 	// always — so a burst-free subscriber was handed the oldest audio in
 	// the buffer and stayed seconds behind live for the whole session.
 	if burstSize <= 0 {
-		return s.Buffer.Head, ch
+		return head, ch
 	}
 
 	// For Ogg/Opus, align to the oldest known page boundary within the valid buffer range
 	// This is crucial for proper Opus decoding - listeners MUST start at page boundaries
 	if s.IsOggStream {
-		validStart := s.Buffer.Head - s.Buffer.Size
+		validStart := head - s.Buffer.Size
 		if validStart < 0 {
 			validStart = 0
 		}
@@ -878,7 +884,7 @@ func (s *Stream) Subscribe(id string, burstSize int) (int64, chan struct{}) {
 			start = s.LastPageOffset
 		default:
 			// Nothing tracked yet — fall back to burst-based offset.
-			start = s.Buffer.Head - int64(burstSize)
+			start = head - int64(burstSize)
 			if start < validStart {
 				start = validStart
 			}
@@ -889,8 +895,8 @@ func (s *Stream) Subscribe(id string, burstSize int) (int64, chan struct{}) {
 	}
 
 	// Ensure we don't go back further than the buffer allows
-	if s.Buffer.Head-start > s.Buffer.Size {
-		start = s.Buffer.Head - s.Buffer.Size
+	if head-start > s.Buffer.Size {
+		start = head - s.Buffer.Size
 	}
 
 	return start, ch
