@@ -50,6 +50,7 @@ type Stream struct {
 	// Timing and source information
 	Started          time.Time // When the stream was created
 	SourceIP         string    // IP address of the source client
+	sourceCloser     func()    // terminates the source connection (see KickSource)
 	LastDataReceived time.Time // Last time data was received from source
 
 	// Stream state and visibility
@@ -194,6 +195,31 @@ func (s *Stream) TryClaimSource(ip string) bool {
 	}
 	s.SourceIP = ip
 	return true
+}
+
+// SetSourceCloser registers how to terminate the current source's
+// connection. RemoveStream and the admin "kick source" action only ever
+// dropped the Stream object and the listeners: the encoder's connection
+// stayed open, kept reading, and a fresh Stream was created under it on
+// the next write, so a kicked source carried on broadcasting. The ingest
+// handler registers a closer when it takes ownership and clears it on
+// exit.
+func (s *Stream) SetSourceCloser(fn func()) {
+	s.mu.Lock()
+	s.sourceCloser = fn
+	s.mu.Unlock()
+}
+
+// KickSource terminates the source connection if one is registered.
+// Safe to call with no source.
+func (s *Stream) KickSource() {
+	s.mu.Lock()
+	fn := s.sourceCloser
+	s.sourceCloser = nil
+	s.mu.Unlock()
+	if fn != nil {
+		fn()
+	}
 }
 
 // ClaimSourceIfFree claims the mount for label unless a DIFFERENT source
@@ -765,6 +791,15 @@ func (s *Stream) Subscribe(id string, burstSize int) (int64, chan struct{}) {
 
 	// Create buffered signal channel for this listener
 	ch := make(chan struct{}, 1)
+	if atomic.LoadInt32(&s.closed) == 1 {
+		// The stream is already closed: Close() has walked the listener
+		// map and will never do so again, so registering here would leave
+		// a subscriber parked on a channel nobody ever closes or signals.
+		// Hand back a closed channel so the reader sees EOF immediately,
+		// which is what every caller does with a closed signal.
+		close(ch)
+		return s.Buffer.Head, ch
+	}
 	s.listeners[id] = ch
 
 	// Freshness gate: if the producer has been silent for >2s, the bytes
@@ -784,6 +819,16 @@ func (s *Stream) Subscribe(id string, burstSize int) (int64, chan struct{}) {
 	start := s.Buffer.Head - int64(burstSize)
 	if start < 0 {
 		start = 0
+	}
+
+	// A caller asking for no burst wants the LIVE EDGE (WebRTC and WHEP
+	// viewers do this; they run their own page sync from there). The
+	// alignment below walks BACKWARDS to the oldest tracked page when it
+	// can't find one at or after `start`, which for start == Head is
+	// always — so a burst-free subscriber was handed the oldest audio in
+	// the buffer and stayed seconds behind live for the whole session.
+	if burstSize <= 0 {
+		return s.Buffer.Head, ch
 	}
 
 	// For Ogg/Opus, align to the oldest known page boundary within the valid buffer range

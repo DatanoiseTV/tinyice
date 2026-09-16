@@ -337,10 +337,10 @@ func (s *Server) apiUpdateStream(w http.ResponseWriter, r *http.Request) {
 			s.Config.DisabledMounts[body.Mount] = true
 			s.Config.UnlockMaps()
 			// Kick the live source if it's currently connected so the new
-			// disabled state takes effect immediately.
-			if st, ok := s.Relay.GetStream(body.Mount); ok {
-				st.DisconnectListeners()
-			}
+			// disabled state takes effect immediately. DisconnectListeners
+			// alone left the encoder streaming — it just recreated the
+			// mount and carried on, so "disabled" disabled nothing.
+			s.Relay.RemoveStream(body.Mount)
 		}
 	}
 

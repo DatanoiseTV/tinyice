@@ -207,3 +207,49 @@ func TestBeginSessionWipesOggState(t *testing.T) {
 		t.Fatalf("flushGen should have advanced (was %d, now %d)", beforeGen, s.flushGen.Load())
 	}
 }
+
+// A subscriber that asks for no burst wants the live edge. The Ogg
+// alignment used to walk backwards to the oldest tracked page whenever it
+// couldn't find one at or after the requested start — which, for the live
+// edge, is always — so WebRTC/WHEP viewers began seconds behind live and
+// never caught up.
+func TestSubscribeZeroBurstStartsAtLiveEdge(t *testing.T) {
+	r := NewRelay(false, nil)
+	s := r.GetOrCreateStream("/ogg-live")
+	s.mu.Lock()
+	s.IsOggStream = true
+	s.ContentType = "audio/ogg"
+	s.mu.Unlock()
+
+	// Fill the buffer with several tracked Ogg pages.
+	page := append([]byte("OggS"), make([]byte, 400)...)
+	for i := 0; i < 40; i++ {
+		s.Broadcast(page, r)
+	}
+	head := s.Buffer.Head
+
+	offset, _ := s.Subscribe("whep-viewer", 0)
+	if offset != head {
+		t.Errorf("zero-burst subscribe started at %d, want the live edge %d (%d bytes behind)",
+			offset, head, head-offset)
+	}
+}
+
+// Subscribing to an already-closed stream used to register a listener
+// that nothing would ever signal or close — the reader parked forever.
+// Close() has already walked the map by then and never runs again.
+func TestSubscribeOnClosedStreamReturnsClosedChannel(t *testing.T) {
+	r := NewRelay(false, nil)
+	s := r.GetOrCreateStream("/closed")
+	s.Close()
+
+	_, ch := s.Subscribe("late", 4096)
+	select {
+	case _, ok := <-ch:
+		if ok {
+			t.Error("signal channel delivered a value on a closed stream")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("subscriber on a closed stream parked forever")
+	}
+}

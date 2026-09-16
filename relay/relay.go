@@ -123,6 +123,11 @@ func (r *Relay) RemoveStream(mount string) {
 	defer r.mu.Unlock()
 
 	if s, ok := r.Streams[mount]; ok {
+		// Terminate the source connection as well. Dropping the Stream
+		// alone left the encoder connected and reading; its next write
+		// simply recreated the mount, so an admin "kick source" did
+		// nothing lasting.
+		s.KickSource()
 		s.Close()
 		delete(r.Streams, mount)
 	}

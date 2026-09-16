@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -209,6 +210,10 @@ func (s *Server) handleSource(w http.ResponseWriter, r *http.Request) {
 	var src io.Reader
 	var setReadDeadline func(time.Time) error
 
+	// Let an admin kick (or a mount being disabled) terminate this
+	// connection: without it the encoder keeps streaming and recreates
+	// the mount on its next write.
+	var closeOnce sync.Once
 	if sourceHasFramedBody(r) {
 		// NOTE: deliberately no Flush here. Flushing the response
 		// before the request body has been read blocks in net/http
@@ -223,6 +228,7 @@ func (s *Server) handleSource(w http.ResponseWriter, r *http.Request) {
 		src = r.Body
 		setReadDeadline = rc.SetReadDeadline
 		defer r.Body.Close()
+		stream.SetSourceCloser(func() { closeOnce.Do(func() { _ = r.Body.Close() }) })
 	} else {
 		hj, ok := w.(http.Hijacker)
 		if !ok {
@@ -239,7 +245,9 @@ func (s *Server) handleSource(w http.ResponseWriter, r *http.Request) {
 		bufrw.Flush()
 		src = bufrw
 		setReadDeadline = conn.SetReadDeadline
+		stream.SetSourceCloser(func() { closeOnce.Do(func() { _ = conn.Close() }) })
 	}
+	defer stream.SetSourceCloser(nil)
 
 	logger.L.Infow("Source connected", "mount", mount, "ip", clientIP, "ua", r.Header.Get("User-Agent"))
 	s.dispatchWebhook("source_connect", map[string]interface{}{
@@ -440,6 +448,13 @@ func (s *Server) updateSourceMetadata(stream *relay.Stream, mount string, r *htt
 func (s *Server) handleListener(w http.ResponseWriter, r *http.Request) {
 	clientIP := s.clientIP(r)
 	if s.isBanned(clientIP) {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+	// A disabled mount refuses sources (handleSource checks the same
+	// map); it must refuse listeners too, or "disabled" only means
+	// "nobody new may broadcast".
+	if s.Config.DisabledMounts[r.URL.Path] {
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
