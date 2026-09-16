@@ -36,8 +36,8 @@ type oggPage struct {
 	body       []byte // concatenated segment payload
 }
 
-func (p *oggPage) bos() bool        { return p.headerType&0x02 != 0 }
-func (p *oggPage) continued() bool  { return p.headerType&0x01 != 0 }
+func (p *oggPage) bos() bool       { return p.headerType&0x02 != 0 }
+func (p *oggPage) continued() bool { return p.headerType&0x01 != 0 }
 
 type oggPageReader struct {
 	br *bufio.Reader
@@ -142,9 +142,9 @@ type chainedOpusDecoder struct {
 
 	// Telemetry. Counters surface decoder health without spamming logs on
 	// every per-packet glitch — we log a summary at most once every 5 s.
-	decodeErrors  atomic.Uint64
-	chainRotates  atomic.Uint64
-	lastReport    time.Time
+	decodeErrors atomic.Uint64
+	chainRotates atomic.Uint64
+	lastReport   time.Time
 }
 
 func newChainedOpusDecoder(r io.Reader) (PCMDecoder, error) {

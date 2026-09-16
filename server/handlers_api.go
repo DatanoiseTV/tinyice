@@ -18,9 +18,9 @@ import (
 )
 
 type streamEventInfo struct {
-	Mount        string  `json:"mount"`
-	Name         string  `json:"name"`
-	Listeners    int     `json:"listeners"`
+	Mount     string `json:"mount"`
+	Name      string `json:"name"`
+	Listeners int    `json:"listeners"`
 	// Viewers counts HLS / WHEP browser playback sessions over the
 	// last 30 s — those clients fetch segments / hold a peer
 	// connection rather than holding the long-lived listener
@@ -48,11 +48,11 @@ type streamEventInfo struct {
 
 	// Video-only metrics. Zero on audio mounts; the frontend hides
 	// the video-stats strip when Width == 0.
-	VideoWidth    int     `json:"video_width,omitempty"`
-	VideoHeight   int     `json:"video_height,omitempty"`
-	VideoFPS      float64 `json:"video_fps,omitempty"`
-	VideoGOP      float64 `json:"video_gop,omitempty"`
-	VideoKbps     int     `json:"video_kbps,omitempty"`
+	VideoWidth  int     `json:"video_width,omitempty"`
+	VideoHeight int     `json:"video_height,omitempty"`
+	VideoFPS    float64 `json:"video_fps,omitempty"`
+	VideoGOP    float64 `json:"video_gop,omitempty"`
+	VideoKbps   int     `json:"video_kbps,omitempty"`
 }
 
 type relayEventInfo struct {
@@ -63,16 +63,16 @@ type relayEventInfo struct {
 }
 
 type streamerEventInfo struct {
-	Name        string               `json:"name"`
-	Mount       string               `json:"mount"`
-	State       int                  `json:"state"`
-	CurrentSong string               `json:"song"`
-	StartTime   int64                `json:"start_time"`
+	Name        string `json:"name"`
+	Mount       string `json:"mount"`
+	State       int    `json:"state"`
+	CurrentSong string `json:"song"`
+	StartTime   int64  `json:"start_time"`
 	// Position is seconds elapsed in the current track, computed
 	// server-side. The UI can't derive it from start_time without
 	// trusting the browser clock to agree with ours.
-	Position    float64              `json:"position"`
-	Duration    float64              `json:"duration"`
+	Position float64 `json:"position"`
+	Duration float64 `json:"duration"`
 	// CurrentID is the playlist id of the track actually playing, so a
 	// UI can highlight the right row. -1 when the track came from the
 	// queue or an external song command.
@@ -197,18 +197,18 @@ func (s *Server) collectStatsPayload(user *config.User) ([]byte, error) {
 		if s.hasAccess(user, st.OutputMount) {
 			stats := st.GetStats()
 			streamers = append(streamers, streamerEventInfo{
-				Name:        stats.Name,
-				Mount:       stats.Mount,
-				State:       int(stats.State),
-				CurrentSong: stats.CurrentSong,
-				StartTime:   stats.StartTime.Unix(),
-				Position:    trackPosition(stats),
-				Duration:    stats.Duration.Seconds(),
-				CurrentID:   stats.CurrentID,
-				PlaylistPos: stats.CurrentPos,
-				PlaylistLen: stats.PlaylistLen,
-				Shuffle:     stats.Shuffle,
-				Loop:        stats.Loop,
+				Name:            stats.Name,
+				Mount:           stats.Mount,
+				State:           int(stats.State),
+				CurrentSong:     stats.CurrentSong,
+				StartTime:       stats.StartTime.Unix(),
+				Position:        trackPosition(stats),
+				Duration:        stats.Duration.Seconds(),
+				CurrentID:       stats.CurrentID,
+				PlaylistPos:     stats.CurrentPos,
+				PlaylistLen:     stats.PlaylistLen,
+				Shuffle:         stats.Shuffle,
+				Loop:            stats.Loop,
 				Queue:           st.GetQueueInfo(),
 				PlaylistVersion: stats.PlaylistVersion,
 			})
@@ -410,15 +410,15 @@ func (s *Server) handlePublicEvents(w http.ResponseWriter, r *http.Request) {
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
 	type PublicStreamInfo struct {
-		Mount       string  `json:"mount"`
-		Name        string  `json:"name"`
-		Listeners   int     `json:"listeners"`
-		Viewers     int     `json:"viewers,omitempty"`
-		Bitrate     string  `json:"bitrate"`
-		Uptime      string  `json:"uptime"`
-		Genre       string  `json:"genre"`
-		Description string  `json:"description"`
-		CurrentSong string  `json:"song"`
+		Mount       string `json:"mount"`
+		Name        string `json:"name"`
+		Listeners   int    `json:"listeners"`
+		Viewers     int    `json:"viewers,omitempty"`
+		Bitrate     string `json:"bitrate"`
+		Uptime      string `json:"uptime"`
+		Genre       string `json:"genre"`
+		Description string `json:"description"`
+		CurrentSong string `json:"song"`
 		// Live mirrors the landing page's bootstrap field: a mount with
 		// no connected source still appears here, and without this the
 		// page had no way to tell the two apart.

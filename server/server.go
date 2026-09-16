@@ -58,12 +58,12 @@ type Server struct {
 	Relay       *relay.Relay             // Core relay/streaming engine
 	RelayM      *relay.RelayManager      // Relay stream management
 	TranscoderM *relay.TranscoderManager // Transcoding management
-	HealthM     *relay.HealthMonitor      // Stream health monitoring
+	HealthM     *relay.HealthMonitor     // Stream health monitoring
 	WebRTCM     *relay.WebRTCManager     // WebRTC connection management
 	StreamerM   *relay.StreamerManager   // AutoDJ/streamer management
-	RTMP        *relay.RTMPServer         // RTMP ingest server (optional)
-	SRT         *relay.SRTServer          // SRT ingest server (optional)
-	TenantM     *relay.TenantManager      // Multi-tenant management
+	RTMP        *relay.RTMPServer        // RTMP ingest server (optional)
+	SRT         *relay.SRTServer         // SRT ingest server (optional)
+	TenantM     *relay.TenantManager     // Multi-tenant management
 	mpdServer   *relay.MPDServer         // MPD protocol server (optional)
 	tmpl        *template.Template       // HTML template for web interface (legacy)
 	shell       *ShellRenderer           // New Preact frontend renderer
@@ -86,9 +86,9 @@ type Server struct {
 
 	hlsOutputs    map[string]*relay.HLSOutput
 	hlsLastAccess map[string]time.Time // last playlist/segment request per mount
-	hlsMu      sync.RWMutex
-	hlsCtx     context.Context
-	hlsCancel  context.CancelFunc
+	hlsMu         sync.RWMutex
+	hlsCtx        context.Context
+	hlsCancel     context.CancelFunc
 
 	// Per-mount poster JPEG, captured client-side and uploaded once per
 	// session. Kept in memory only — restart drops them and the next
@@ -115,7 +115,6 @@ type Server struct {
 	// GeoTracker — keeps a live (country, mount) listener count
 	// updated by handleListener for the dashboard map.
 	GeoTracker *GeoTracker
-
 }
 
 func NewServer(cfg *config.Config, authLog *zap.SugaredLogger, version, commit, setupToken string) *Server {
@@ -173,25 +172,25 @@ func NewServer(cfg *config.Config, authLog *zap.SugaredLogger, version, commit, 
 	})
 	hlsCtx, hlsCancel := context.WithCancel(context.Background())
 	srv := &Server{
-		Config:       cfg,
-		Relay:        r,
-		HealthM:      healthM,
-		RelayM:       relay.NewRelayManager(r),
-		TranscoderM:  relay.NewTranscoderManager(r),
-		WebRTCM:      relay.NewWebRTCManager(r),
-		StreamerM:    relay.NewStreamerManager(r, cfg),
-		RTMP:         relay.NewRTMPServer(r, cfg),
-		SRT:          relay.NewSRTServer(r, cfg),
-		TenantM:      relay.NewTenantManager(),
-		tmpl:         tmpl,
-		shell:        NewShellRenderer(),
-		Version:      version,
-		Commit:       commit,
-		startTime:    time.Now(),
-		AuthLog:      authLog,
-		sessions:     make(map[string]*session),
-		authAttempts: make(map[string]*authAttempt),
-		scanAttempts: make(map[string]*scanAttempt),
+		Config:           cfg,
+		Relay:            r,
+		HealthM:          healthM,
+		RelayM:           relay.NewRelayManager(r),
+		TranscoderM:      relay.NewTranscoderManager(r),
+		WebRTCM:          relay.NewWebRTCManager(r),
+		StreamerM:        relay.NewStreamerManager(r, cfg),
+		RTMP:             relay.NewRTMPServer(r, cfg),
+		SRT:              relay.NewSRTServer(r, cfg),
+		TenantM:          relay.NewTenantManager(),
+		tmpl:             tmpl,
+		shell:            NewShellRenderer(),
+		Version:          version,
+		Commit:           commit,
+		startTime:        time.Now(),
+		AuthLog:          authLog,
+		sessions:         make(map[string]*session),
+		authAttempts:     make(map[string]*authAttempt),
+		scanAttempts:     make(map[string]*scanAttempt),
 		hlsOutputs:       make(map[string]*relay.HLSOutput),
 		hlsLastAccess:    make(map[string]time.Time),
 		hlsCtx:           hlsCtx,

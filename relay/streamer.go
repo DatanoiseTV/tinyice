@@ -35,21 +35,21 @@ const (
 const autoDJSourceLabel = "autodj"
 
 type Streamer struct {
-	Name           string
-	OutputMount    string
-	MusicDir       string
-	Format         string
-	Bitrate        int
-	Playlist       []PlaylistSong
-	Queue          []string
-	CurrentPos     int
-	State          StreamerState
-	Loop           bool
-	Shuffle        bool
-	InjectMetadata bool
-	Visible        bool
-	MPDPassword    string
-	LastPlaylist        string
+	Name                 string
+	OutputMount          string
+	MusicDir             string
+	Format               string
+	Bitrate              int
+	Playlist             []PlaylistSong
+	Queue                []string
+	CurrentPos           int
+	State                StreamerState
+	Loop                 bool
+	Shuffle              bool
+	InjectMetadata       bool
+	Visible              bool
+	MPDPassword          string
+	LastPlaylist         string
 	SongCommand          string
 	SongCommandTimeout   int
 	OnPlayCommand        string
@@ -61,7 +61,7 @@ type Streamer struct {
 	cancel context.CancelFunc
 	mu     sync.RWMutex
 
-	fileCancel   context.CancelFunc
+	fileCancel    context.CancelFunc
 	titleCache    map[string]string
 	titleFetching map[string]struct{} // in-flight tag reads, keyed by path
 	titleFetchWg  sync.WaitGroup
@@ -83,11 +83,11 @@ type Streamer struct {
 	// so reported position stays honest instead of counting paused
 	// wall-clock as playback progress.
 	CurrentPausedNanos atomic.Int64
-	MPDServer           *MPDServer
-	NextID              int
-	PlaylistVersion     uint32
-	idleCh              chan string
-	stateCh             chan struct{}
+	MPDServer          *MPDServer
+	NextID             int
+	PlaylistVersion    uint32
+	idleCh             chan string
+	stateCh            chan struct{}
 }
 
 type StreamerManager struct {
@@ -855,10 +855,10 @@ type StreamerStats struct {
 	// identify the track actually playing, which is what a UI needs to
 	// highlight the right row (-1 when the track came from the queue or
 	// an external song command).
-	CurrentID      int
-	CurrentPos     int
-	PlaylistPos    int
-	PlaylistLen    int
+	CurrentID   int
+	CurrentPos  int
+	PlaylistPos int
+	PlaylistLen int
 	// PlaylistVersion bumps on every playlist mutation. Clients watch it
 	// to know when to refetch the playlist, so the live event feed
 	// doesn't have to carry the whole array on every tick.
@@ -887,26 +887,26 @@ func (s *Streamer) GetStats() StreamerStats {
 	}
 
 	return StreamerStats{
-		Name:           s.Name,
-		Mount:          s.OutputMount,
-		State:          s.State,
-		CurrentSong:    s.CurrentFile,
-		StartTime:      s.CurrentFileTime,
-		Duration:       s.CurrentFileDuration,
-		CurrentID:      s.CurrentPlayingID,
+		Name:            s.Name,
+		Mount:           s.OutputMount,
+		State:           s.State,
+		CurrentSong:     s.CurrentFile,
+		StartTime:       s.CurrentFileTime,
+		Duration:        s.CurrentFileDuration,
+		CurrentID:       s.CurrentPlayingID,
 		CurrentPos:      s.CurrentPlayingPos,
 		PlaylistPos:     s.CurrentPos,
 		PlaylistVersion: s.PlaylistVersion,
 		PausedFor:       time.Duration(s.CurrentPausedNanos.Load()),
-		PlaylistLen:    len(s.Playlist),
-		Shuffle:        s.Shuffle,
-		MPDPort:        mpdPort,
-		MPDPassword:    mpdPassword,
-		MusicDir:       s.MusicDir,
-		Loop:           s.Loop,
-		InjectMetadata: s.InjectMetadata,
-		Visible:        s.Visible,
-		LastPlaylist:   s.LastPlaylist,
+		PlaylistLen:     len(s.Playlist),
+		Shuffle:         s.Shuffle,
+		MPDPort:         mpdPort,
+		MPDPassword:     mpdPassword,
+		MusicDir:        s.MusicDir,
+		Loop:            s.Loop,
+		InjectMetadata:  s.InjectMetadata,
+		Visible:         s.Visible,
+		LastPlaylist:    s.LastPlaylist,
 	}
 }
 
@@ -929,32 +929,32 @@ func (sm *StreamerManager) StartStreamer(name, mount, musicDir string, loop bool
 	}
 
 	s := &Streamer{
-		Name:              name,
-		OutputMount:       mount,
-		MusicDir:          absMusicDir,
-		Format:            format,
-		Bitrate:           bitrate,
-		Playlist:          initialPlaylist,
-		State:             StateStopped,
-		Loop:              loop,
-		InjectMetadata:    injectMetadata,
-		Visible:           visible,
-		MPDPassword:       mpdPassword,
-		LastPlaylist:       lastPlaylist,
+		Name:                 name,
+		OutputMount:          mount,
+		MusicDir:             absMusicDir,
+		Format:               format,
+		Bitrate:              bitrate,
+		Playlist:             initialPlaylist,
+		State:                StateStopped,
+		Loop:                 loop,
+		InjectMetadata:       injectMetadata,
+		Visible:              visible,
+		MPDPassword:          mpdPassword,
+		LastPlaylist:         lastPlaylist,
 		SongCommand:          songCommand,
 		SongCommandTimeout:   songCommandTimeout,
 		OnPlayCommand:        onPlayCommand,
 		OnPlayCommandTimeout: onPlayCommandTimeout,
 		relay:                sm.relay,
-		ctx:               ctx,
-		cancel:            cancel,
-		titleCache:        make(map[string]string),
-		NextID:            nextID, // Start NextID after initial playlist
-		CurrentPlayingPos: -1,
-		CurrentPlayingID:  -1,
-		PlaylistVersion:   1,
-		idleCh:            make(chan string, 10),
-		stateCh:           make(chan struct{}, 1),
+		ctx:                  ctx,
+		cancel:               cancel,
+		titleCache:           make(map[string]string),
+		NextID:               nextID, // Start NextID after initial playlist
+		CurrentPlayingPos:    -1,
+		CurrentPlayingID:     -1,
+		PlaylistVersion:      1,
+		idleCh:               make(chan string, 10),
+		stateCh:              make(chan struct{}, 1),
 	}
 
 	if mpdEnabled && mpdPort != "" {
@@ -1471,9 +1471,9 @@ func (g *gainReader) Read(p []byte) (int, error) {
 // schedule" and they would dump the rest of the file into the ring buffer
 // as fast as the CPU allows.
 type pauseGate struct {
-	src        io.Reader
-	s          *Streamer
-	ctx        context.Context
+	src         io.Reader
+	s           *Streamer
+	ctx         context.Context
 	pausedTotal atomic.Int64 // nanoseconds spent blocked
 }
 

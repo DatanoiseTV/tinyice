@@ -307,7 +307,7 @@ func (h *HLSOutput) runFramedSession(ctx context.Context, audio, video *Track) {
 		// trouble starting playback when the initial PTS is far from
 		// zero, sometimes silently stalling. ptsBase is captured from
 		// the first frame of the session and zeroes the timeline.
-		ptsBase    int64 = -1
+		ptsBase int64 = -1
 	)
 
 	flush := func() {

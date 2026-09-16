@@ -39,7 +39,7 @@ func (b *backoff) reset() {
 type RelayState int
 
 const (
-	RelayConnecting   RelayState = iota
+	RelayConnecting RelayState = iota
 	RelayConnected
 	RelayReconnecting
 	RelayFailed

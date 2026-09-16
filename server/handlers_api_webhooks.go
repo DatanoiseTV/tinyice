@@ -94,9 +94,9 @@ func (s *Server) apiGetWebhookMeta(w http.ResponseWriter, r *http.Request) {
 	}
 
 	jsonResponse(w, map[string]interface{}{
-		"events":             events,
+		"events":              events,
 		"global_placeholders": WebhookGlobalPlaceholders,
-		"presets":            builtinPresets,
+		"presets":             builtinPresets,
 		"funcs": []map[string]string{
 			{"name": "urlencode", "description": "URL-encode a string for query params or URLs.", "example": "{{urlencode .Title}}"},
 			{"name": "json", "description": "Marshal any value to a JSON literal.", "example": "{{json .}}"},

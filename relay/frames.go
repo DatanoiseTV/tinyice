@@ -23,10 +23,10 @@ const (
 // single non-IDR slice). For AAC it's one ADTS frame. For MP3 it's one
 // MPEG audio frame.
 type Frame struct {
-	Kind FrameKind
-	PTS  int64 // presentation timestamp, 90 kHz units
-	DTS  int64 // decode timestamp, 90 kHz units (== PTS for audio and B-frame-less video)
-	Data []byte
+	Kind     FrameKind
+	PTS      int64 // presentation timestamp, 90 kHz units
+	DTS      int64 // decode timestamp, 90 kHz units (== PTS for audio and B-frame-less video)
+	Data     []byte
 	Keyframe bool // video only; ignored for audio
 }
 

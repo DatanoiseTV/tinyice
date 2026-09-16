@@ -44,9 +44,9 @@ func makeOggPage(granule uint64, serial uint32, seq uint32, bodyLen int) []byte 
 }
 
 func TestFindOggHeaderEnd_HeadersThenAudio(t *testing.T) {
-	hdr1 := makeOggPage(0, 42, 0, 19)       // OpusHead-sized BOS
-	hdr2 := makeOggPage(0, 42, 1, 64)       // Tags
-	audio := makeOggPage(960, 42, 2, 200)   // First audio page
+	hdr1 := makeOggPage(0, 42, 0, 19)     // OpusHead-sized BOS
+	hdr2 := makeOggPage(0, 42, 1, 64)     // Tags
+	audio := makeOggPage(960, 42, 2, 200) // First audio page
 	data := append(append(append([]byte{}, hdr1...), hdr2...), audio...)
 
 	end, needMore, abort := FindOggHeaderEnd(data)

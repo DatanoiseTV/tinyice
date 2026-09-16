@@ -135,7 +135,7 @@ func TestH264NALUFilter_NonIDRSlice(t *testing.T) {
 func TestH264NALUFilter_DropsDuplicateAUD(t *testing.T) {
 	// Input already has an AUD up front (e.g. from a libx264-style
 	// encoder) — we drop it and emit our own based on the slice type.
-	annexB := []byte{0x00, 0x00, 0x00, 0x01, 0x09, 0x30} // existing AUD
+	annexB := []byte{0x00, 0x00, 0x00, 0x01, 0x09, 0x30}        // existing AUD
 	annexB = append(annexB, 0x00, 0x00, 0x00, 0x01, 0x41, 0xe0) // P-slice
 	out := h264NALUFilter(annexB, 30)
 	// Should have exactly ONE AUD NALU in output.

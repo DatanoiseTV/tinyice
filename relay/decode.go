@@ -8,11 +8,11 @@ import (
 	"io"
 	"math"
 
+	"github.com/hajimehoshi/go-mp3"
 	"github.com/jfreymuth/oggvorbis"
 	"github.com/kazzmir/opus-go/ogg"
 	"github.com/mewkiz/flac"
 	"github.com/mewkiz/flac/frame"
-	"github.com/hajimehoshi/go-mp3"
 )
 
 // PCMDecoder produces interleaved signed 16-bit little-endian stereo PCM
@@ -295,9 +295,9 @@ func newWavDecoder(r io.Reader) (PCMDecoder, error) {
 	}
 
 	var (
-		fmtFound                     bool
-		sampleRate, channels, bps    int
-		isFloat                      bool
+		fmtFound                  bool
+		sampleRate, channels, bps int
+		isFloat                   bool
 	)
 	for {
 		var hdr [8]byte

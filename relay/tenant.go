@@ -26,11 +26,11 @@ type Tenant struct {
 
 // TenantLimits defines resource limits for a tenant.
 type TenantLimits struct {
-	MaxStreams         int   `json:"max_streams"`          // 0 = unlimited
-	MaxListeners      int   `json:"max_listeners"`        // Per stream
-	MaxTotalListeners  int   `json:"max_total_listeners"`  // Across all streams
-	MaxBitrateKbps    int   `json:"max_bitrate_kbps"`     // Max source bitrate
-	MaxStorageMB      int   `json:"max_storage_mb"`       // For AutoDJ files
+	MaxStreams        int   `json:"max_streams"`         // 0 = unlimited
+	MaxListeners      int   `json:"max_listeners"`       // Per stream
+	MaxTotalListeners int   `json:"max_total_listeners"` // Across all streams
+	MaxBitrateKbps    int   `json:"max_bitrate_kbps"`    // Max source bitrate
+	MaxStorageMB      int   `json:"max_storage_mb"`      // For AutoDJ files
 	AllowTranscoding  bool  `json:"allow_transcoding"`
 	AllowRelay        bool  `json:"allow_relay"`
 	AllowWebRTC       bool  `json:"allow_webrtc"`
@@ -140,7 +140,7 @@ func (t *Tenant) CheckBandwidthLimit() bool {
 // DefaultTenantLimits returns limits suitable for an unlimited/admin tenant.
 func DefaultTenantLimits() TenantLimits {
 	return TenantLimits{
-		MaxStreams:         0, // unlimited
+		MaxStreams:        0, // unlimited
 		MaxListeners:      0,
 		MaxTotalListeners: 0,
 		AllowTranscoding:  true,
@@ -159,7 +159,7 @@ func PlanLimits(plan string) TenantLimits {
 	switch plan {
 	case "free":
 		return TenantLimits{
-			MaxStreams:         1,
+			MaxStreams:        1,
 			MaxListeners:      10,
 			MaxTotalListeners: 10,
 			MaxBitrateKbps:    128,
@@ -175,7 +175,7 @@ func PlanLimits(plan string) TenantLimits {
 		}
 	case "starter":
 		return TenantLimits{
-			MaxStreams:         3,
+			MaxStreams:        3,
 			MaxListeners:      50,
 			MaxTotalListeners: 100,
 			MaxBitrateKbps:    320,
@@ -191,7 +191,7 @@ func PlanLimits(plan string) TenantLimits {
 		}
 	case "pro":
 		return TenantLimits{
-			MaxStreams:         10,
+			MaxStreams:        10,
 			MaxListeners:      500,
 			MaxTotalListeners: 1000,
 			MaxBitrateKbps:    0, // unlimited

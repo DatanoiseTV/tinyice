@@ -73,8 +73,8 @@ func parsePages(data []byte) []map[string]uint64 {
 func TestOggPageRewriter_HeadersThenAudio(t *testing.T) {
 	// Simulate the real-world layout: a cached BOS + Tags with granule 0,
 	// then live audio pages with a large granule from a long-running source.
-	bos := buildPage(0x02, 0, 42, 0, 19)   // BOS
-	tags := buildPage(0x00, 0, 42, 1, 64)  // Tags (still granule 0)
+	bos := buildPage(0x02, 0, 42, 0, 19)  // BOS
+	tags := buildPage(0x00, 0, 42, 1, 64) // Tags (still granule 0)
 	aud1 := buildPage(0x00, 15_800_000, 42, 1247, 200)
 	aud2 := buildPage(0x00, 15_800_960, 42, 1248, 200)
 
@@ -224,8 +224,8 @@ func TestOggPageRewriter_OpusPreSkipAnchor(t *testing.T) {
 	// Build a BOS page whose body is a minimal OpusHead with PreSkip = 312.
 	opusHead := make([]byte, 19)
 	copy(opusHead[0:8], "OpusHead")
-	opusHead[8] = 1     // version
-	opusHead[9] = 2     // channels
+	opusHead[8] = 1                                     // version
+	opusHead[9] = 2                                     // channels
 	binary.LittleEndian.PutUint16(opusHead[10:12], 312) // PreSkip
 	binary.LittleEndian.PutUint32(opusHead[12:16], 48000)
 	// 16:18 = OutputGain, 18 = ChannelMappingFamily
@@ -284,8 +284,8 @@ func TestOggPageRewriter_RejectsFakeOggS(t *testing.T) {
 	var gp [8]byte
 	binary.LittleEndian.PutUint64(gp[:], 12345)
 	stream = append(stream, gp[:]...)
-	stream = append(stream, 1, 2, 3, 4) // serial
-	stream = append(stream, 5, 6, 7, 8) // seq
+	stream = append(stream, 1, 2, 3, 4)    // serial
+	stream = append(stream, 5, 6, 7, 8)    // seq
 	stream = append(stream, 9, 10, 11, 12) // fake CRC — definitely wrong
 	stream = append(stream, 1)             // num_segments
 	stream = append(stream, 8)             // one segment, 8 bytes

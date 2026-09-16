@@ -11,7 +11,7 @@ import (
 type HealthStatus int
 
 const (
-	StatusHealthy  HealthStatus = iota
+	StatusHealthy HealthStatus = iota
 	StatusDegraded
 	StatusDead
 )

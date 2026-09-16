@@ -112,12 +112,12 @@ func (t *GeoTracker) Snapshot(mountFilter string) []GeoCity {
 	}
 	t.mu.Lock()
 	type acc struct {
-		iso     string
-		city    string
-		lat     int32
-		lon     int32
-		total   int
-		mounts  map[string]int
+		iso    string
+		city   string
+		lat    int32
+		lon    int32
+		total  int
+		mounts map[string]int
 	}
 	byCity := make(map[geoKey]*acc) // key WITHOUT mount field
 	for k, v := range t.counts {

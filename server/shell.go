@@ -11,20 +11,21 @@ import (
 	"github.com/DatanoiseTV/tinyice/logger"
 )
 
-//go:generate sh -c "cd frontend && npm install --silent && npm run build"
 // `all:` is required because Vite emits underscore-prefixed vendor
 // chunks (e.g. _commonjsHelpers-*.js) when a dependency uses
 // CommonJS modules; the default `//go:embed` directive silently
 // skips files starting with `_` or `.`, so without the prefix those
 // chunks would 404 at runtime even though they're present on disk.
+//
+//go:generate sh -c "cd frontend && npm install --silent && npm run build"
 //go:embed all:frontend/dist
 var frontendDistFS embed.FS
 
 // ShellRenderer serves the new Preact-based frontend.
 // It reads Vite's built HTML files and injects initial page data.
 type ShellRenderer struct {
-	distFS   fs.FS
-	assetFS  fs.FS
+	distFS    fs.FS
+	assetFS   fs.FS
 	htmlCache map[string]string
 }
 

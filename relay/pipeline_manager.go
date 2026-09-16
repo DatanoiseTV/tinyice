@@ -122,13 +122,13 @@ func (pm *PipelineManager) PipelineCount() int {
 
 // PipelineStats is a snapshot of a pipeline's state.
 type PipelineStats struct {
-	Mount    string
-	TenantID string
-	Protocol string // source protocol
-	Tracks   []TrackStats
+	Mount     string
+	TenantID  string
+	Protocol  string // source protocol
+	Tracks    []TrackStats
 	Listeners int
-	Created  time.Time
-	Health   PipelineHealth
+	Created   time.Time
+	Health    PipelineHealth
 }
 
 // TrackStats is a snapshot of a track's state.

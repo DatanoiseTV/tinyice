@@ -100,14 +100,14 @@ func (m *TSMuxer) writePMTAV(buf *bytes.Buffer, audioStreamType byte) {
 	packet[4] = 0x00 // pointer field
 
 	pmt := packet[5:]
-	pmt[0] = 0x02 // table_id
-	pmt[1] = 0xB0 // section_syntax_indicator
-	pmt[2] = 23   // section_length (larger for A/V)
-	pmt[3] = 0x00 // program_number high
-	pmt[4] = 0x01 // program_number low
-	pmt[5] = 0xC1 // version=0, current_next=1
-	pmt[6] = 0x00 // section_number
-	pmt[7] = 0x00 // last_section_number
+	pmt[0] = 0x02                     // table_id
+	pmt[1] = 0xB0                     // section_syntax_indicator
+	pmt[2] = 23                       // section_length (larger for A/V)
+	pmt[3] = 0x00                     // program_number high
+	pmt[4] = 0x01                     // program_number low
+	pmt[5] = 0xC1                     // version=0, current_next=1
+	pmt[6] = 0x00                     // section_number
+	pmt[7] = 0x00                     // last_section_number
 	pmt[8] = 0xE0 | byte(videoPID>>8) // PCR PID = video
 	pmt[9] = byte(videoPID & 0xFF)
 	pmt[10] = 0xF0 // reserved + program_info_length high
@@ -159,8 +159,8 @@ func (m *TSMuxer) writePAT(buf *bytes.Buffer) {
 
 	// TS header
 	packet[0] = tsSyncByte
-	packet[1] = 0x40 // payload_unit_start_indicator = 1, PID high bits = 0
-	packet[2] = 0x00 // PID low bits = 0 (PAT)
+	packet[1] = 0x40                            // payload_unit_start_indicator = 1, PID high bits = 0
+	packet[2] = 0x00                            // PID low bits = 0 (PAT)
 	packet[3] = 0x10 | (m.patContinuity & 0x0F) // no adaptation, payload only
 	m.patContinuity++
 
@@ -178,10 +178,10 @@ func (m *TSMuxer) writePAT(buf *bytes.Buffer) {
 	pat[6] = 0x00 // section_number
 	pat[7] = 0x00 // last_section_number
 	// Program entry: program_number=1, PMT PID=0x1000
-	pat[8] = 0x00                       // program_number high
-	pat[9] = 0x01                       // program_number low
-	pat[10] = 0xE0 | byte(pmtPID>>8)   // reserved + PID high
-	pat[11] = byte(pmtPID & 0xFF)      // PID low
+	pat[8] = 0x00                    // program_number high
+	pat[9] = 0x01                    // program_number low
+	pat[10] = 0xE0 | byte(pmtPID>>8) // reserved + PID high
+	pat[11] = byte(pmtPID & 0xFF)    // PID low
 
 	// CRC32
 	crc := crc32MPEG2(pat[0:12])
@@ -210,21 +210,21 @@ func (m *TSMuxer) writePMT(buf *bytes.Buffer) {
 
 	// PMT table
 	pmt := packet[5:]
-	pmt[0] = 0x02 // table_id = 2 (PMT)
-	pmt[1] = 0xB0 // section_syntax_indicator=1
-	pmt[2] = 18   // section_length
-	pmt[3] = 0x00 // program_number high
-	pmt[4] = 0x01 // program_number low
-	pmt[5] = 0xC1 // version=0, current_next=1
-	pmt[6] = 0x00 // section_number
-	pmt[7] = 0x00 // last_section_number
+	pmt[0] = 0x02                     // table_id = 2 (PMT)
+	pmt[1] = 0xB0                     // section_syntax_indicator=1
+	pmt[2] = 18                       // section_length
+	pmt[3] = 0x00                     // program_number high
+	pmt[4] = 0x01                     // program_number low
+	pmt[5] = 0xC1                     // version=0, current_next=1
+	pmt[6] = 0x00                     // section_number
+	pmt[7] = 0x00                     // last_section_number
 	pmt[8] = 0xE0 | byte(audioPID>>8) // PCR PID high
 	pmt[9] = byte(audioPID & 0xFF)    // PCR PID low
-	pmt[10] = 0xF0 // reserved + program_info_length high
-	pmt[11] = 0x00 // program_info_length low = 0
+	pmt[10] = 0xF0                    // reserved + program_info_length high
+	pmt[11] = 0x00                    // program_info_length low = 0
 
 	// Stream entry: MP3 audio
-	pmt[12] = 0x03                      // stream_type = 0x03 (MP3/MPEG-1 Audio)
+	pmt[12] = 0x03                     // stream_type = 0x03 (MP3/MPEG-1 Audio)
 	pmt[13] = 0xE0 | byte(audioPID>>8) // reserved + elementary PID high
 	pmt[14] = byte(audioPID & 0xFF)
 	pmt[15] = 0xF0 // reserved + ES_info_length high
@@ -265,7 +265,7 @@ func (m *TSMuxer) writePESPackets(buf *bytes.Buffer, pid uint16, continuity *uin
 	for offset < len(payload) {
 		packet := make([]byte, tsPacketSize)
 		packet[0] = tsSyncByte
-		pidHigh := byte(pid >> 8) & 0x1F
+		pidHigh := byte(pid>>8) & 0x1F
 		if first {
 			pidHigh |= 0x40 // payload_unit_start_indicator
 		}

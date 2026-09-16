@@ -92,7 +92,9 @@ func ParseADTSFrames(data []byte) ([]ADTSFrame, []byte) {
 // (ffmpeg, Safari, hls.js) can parse the audio.
 //
 // profile          — AAC profile from the AudioSpecificConfig
-//                    (0=Main, 1=LC, 2=SSR, 3=LTP)
+//
+//	(0=Main, 1=LC, 2=SSR, 3=LTP)
+//
 // sampleRateIdx    — index into the AAC sample-rate table (0–12)
 // channelConfig    — AAC channel configuration (1=mono, 2=stereo, …)
 func BuildADTSHeader(profile, sampleRateIdx, channelConfig byte, payloadLen int) []byte {

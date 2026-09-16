@@ -594,18 +594,32 @@ func (s *Server) handleListener(w http.ResponseWriter, r *http.Request) {
 		// single-string copies — same race profile the rest of this file
 		// already accepts.
 		icyName := stream.Name
-		if icyName == "" { icyName = s.Config.PageTitle }
+		if icyName == "" {
+			icyName = s.Config.PageTitle
+		}
 		icyGenre := stream.Genre
 		icyURL := stream.URL
 		icyDesc := stream.Description
 		icyBR := stream.Bitrate
 		icyPub := stream.Public
 		w.Header().Set("icy-name", icyName)
-		if icyGenre != "" { w.Header().Set("icy-genre", icyGenre) }
-		if icyURL   != "" { w.Header().Set("icy-url", icyURL) }
-		if icyDesc  != "" { w.Header().Set("icy-description", icyDesc) }
-		if icyBR    != "" { w.Header().Set("icy-br", icyBR) }
-		if icyPub        { w.Header().Set("icy-pub", "1") } else { w.Header().Set("icy-pub", "0") }
+		if icyGenre != "" {
+			w.Header().Set("icy-genre", icyGenre)
+		}
+		if icyURL != "" {
+			w.Header().Set("icy-url", icyURL)
+		}
+		if icyDesc != "" {
+			w.Header().Set("icy-description", icyDesc)
+		}
+		if icyBR != "" {
+			w.Header().Set("icy-br", icyBR)
+		}
+		if icyPub {
+			w.Header().Set("icy-pub", "1")
+		} else {
+			w.Header().Set("icy-pub", "0")
+		}
 
 		if s.Config.MaxListeners > 0 && stream.ListenersCount() >= s.Config.MaxListeners {
 			http.Error(w, "Server Full", http.StatusServiceUnavailable)
@@ -924,7 +938,6 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	pageData["streams"] = s.visibleStreamList()
 	s.shell.Render(w, "landing", s.Config.PageTitle, pageData)
 }
-
 
 // isAlreadyMP3 returns true if the Content-Type header advertises an MP3
 // stream — an auto MP3 transcoder of an mp3 source is wasted CPU.

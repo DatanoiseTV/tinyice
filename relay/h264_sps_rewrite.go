@@ -31,27 +31,27 @@ import (
 // bitstream. Fields we don't touch (e.g. seq_scaling_list_present)
 // are deliberately omitted; we don't rewrite SPSs that use them.
 type SPSInfo struct {
-	ProfileIDC      byte
-	ConstraintFlags byte // bits 0-7 packed
-	LevelIDC        byte
-	SeqParameterSetID uint32
-	ChromaFormatIDC uint32 // 1 = 4:2:0 (only mode we handle)
-	BitDepthLumaM8  uint32
-	BitDepthChromaM8 uint32
-	Log2MaxFrameNumM4 uint32
-	PicOrderCntType uint32
+	ProfileIDC              byte
+	ConstraintFlags         byte // bits 0-7 packed
+	LevelIDC                byte
+	SeqParameterSetID       uint32
+	ChromaFormatIDC         uint32 // 1 = 4:2:0 (only mode we handle)
+	BitDepthLumaM8          uint32
+	BitDepthChromaM8        uint32
+	Log2MaxFrameNumM4       uint32
+	PicOrderCntType         uint32
 	Log2MaxPicOrderCntLSBM4 uint32 // only if PicOrderCntType == 0
-	MaxNumRefFrames uint32
-	GapsInFrameNumAllowed bool
-	PicWidthInMBsM1 uint32
-	PicHeightInMapUnitsM1 uint32
-	FrameMBsOnlyFlag bool
-	Direct8x8InferenceFlag bool
-	FrameCroppingFlag bool
-	FrameCropLeftOffset uint32
-	FrameCropRightOffset uint32
-	FrameCropTopOffset uint32
-	FrameCropBottomOffset uint32
+	MaxNumRefFrames         uint32
+	GapsInFrameNumAllowed   bool
+	PicWidthInMBsM1         uint32
+	PicHeightInMapUnitsM1   uint32
+	FrameMBsOnlyFlag        bool
+	Direct8x8InferenceFlag  bool
+	FrameCroppingFlag       bool
+	FrameCropLeftOffset     uint32
+	FrameCropRightOffset    uint32
+	FrameCropTopOffset      uint32
+	FrameCropBottomOffset   uint32
 }
 
 // h264BitWriter appends a big-endian bit-stream into a growing RBSP
@@ -229,7 +229,7 @@ func BuildH264SPS(info *SPSInfo, fpsHint uint32) []byte {
 	// constraint, level). We construct these by hand because the
 	// writer's u(8) would split them across the bit stream the same
 	// way.
-	bw.u(8, uint32(0x67))             // nal_unit_type=7, nal_ref_idc=3
+	bw.u(8, uint32(0x67)) // nal_unit_type=7, nal_ref_idc=3
 	bw.u(8, uint32(info.ProfileIDC))
 	bw.u(8, uint32(info.ConstraintFlags))
 	// Apple's HLS player rejects 1080p streams declared at Level 4.0
@@ -284,51 +284,51 @@ func BuildH264SPS(info *SPSInfo, fpsHint uint32) []byte {
 
 	// VUI parameters (vui_parameters_present_flag = 1)
 	bw.u(1, 1)
-	bw.u(1, 1)      // aspect_ratio_info_present_flag
-	bw.u(8, 1)      // aspect_ratio_idc = 1 (1:1 square)
-	bw.u(1, 0)      // overscan_info_present_flag
-	bw.u(1, 1)      // video_signal_type_present_flag
-	bw.u(3, 5)      // video_format = 5 (unspecified)
-	bw.u(1, 0)      // video_full_range_flag
-	bw.u(1, 1)      // colour_description_present_flag
-	bw.u(8, 1)      // colour_primaries = 1 (bt709)
-	bw.u(8, 1)      // transfer_characteristics = 1 (bt709)
-	bw.u(8, 1)      // matrix_coefficients = 1 (bt709)
-	bw.u(1, 0)      // chroma_loc_info_present_flag
+	bw.u(1, 1) // aspect_ratio_info_present_flag
+	bw.u(8, 1) // aspect_ratio_idc = 1 (1:1 square)
+	bw.u(1, 0) // overscan_info_present_flag
+	bw.u(1, 1) // video_signal_type_present_flag
+	bw.u(3, 5) // video_format = 5 (unspecified)
+	bw.u(1, 0) // video_full_range_flag
+	bw.u(1, 1) // colour_description_present_flag
+	bw.u(8, 1) // colour_primaries = 1 (bt709)
+	bw.u(8, 1) // transfer_characteristics = 1 (bt709)
+	bw.u(8, 1) // matrix_coefficients = 1 (bt709)
+	bw.u(1, 0) // chroma_loc_info_present_flag
 
-	bw.u(1, 1)                  // timing_info_present_flag
+	bw.u(1, 1) // timing_info_present_flag
 	// Match x264's canonical timing-info shape: time_scale=60,
 	// num_units_in_tick=1 → declared 30 fps. Mobile players (iOS
 	// Safari especially) treat the timing_info as a coarse hint;
 	// any value here that doesn't match the actual frame cadence
 	// implicitly inflates buffer estimates. Sticking to x264's
 	// known-good shape avoids surprising the demuxer.
-	bw.u(32, 1)                 // num_units_in_tick
-	bw.u(32, 60)                // time_scale (30 fps when num_units=1)
-	bw.u(1, 0)                  // fixed_frame_rate_flag = 0 (spec-consistent
-	                            // with no HRD params)
-	bw.u(1, 0)                  // nal_hrd_parameters_present_flag
-	bw.u(1, 0)                  // vcl_hrd_parameters_present_flag
+	bw.u(32, 1)  // num_units_in_tick
+	bw.u(32, 60) // time_scale (30 fps when num_units=1)
+	bw.u(1, 0)   // fixed_frame_rate_flag = 0 (spec-consistent
+	// with no HRD params)
+	bw.u(1, 0) // nal_hrd_parameters_present_flag
+	bw.u(1, 0) // vcl_hrd_parameters_present_flag
 	// low_delay_hrd_flag is inferred (= 1 when no HRD AND
 	// fixed_frame_rate_flag=0 per H.264 §E.2.1). Not emitted here.
-	bw.u(1, 0)                  // pic_struct_present_flag
+	bw.u(1, 0) // pic_struct_present_flag
 
-	bw.u(1, 1)                  // bitstream_restriction_flag
-	bw.u(1, 1)                  // motion_vectors_over_pic_boundaries_flag
+	bw.u(1, 1) // bitstream_restriction_flag
+	bw.u(1, 1) // motion_vectors_over_pic_boundaries_flag
 	// Match x264's bitstream_restriction values byte-for-byte. iOS
 	// accepts these without question; other values (we previously
 	// emitted 2/1/16/16) read as overly-permissive and made iOS
 	// reject the SPS even after we fixed the HRD inconsistency.
-	bw.ue(0)                    // max_bytes_per_pic_denom
-	bw.ue(0)                    // max_bits_per_mb_denom
-	bw.ue(11)                   // log2_max_mv_length_horizontal
-	bw.ue(11)                   // log2_max_mv_length_vertical
-	bw.ue(2)                    // max_num_reorder_frames
+	bw.ue(0)  // max_bytes_per_pic_denom
+	bw.ue(0)  // max_bits_per_mb_denom
+	bw.ue(11) // log2_max_mv_length_horizontal
+	bw.ue(11) // log2_max_mv_length_vertical
+	bw.ue(2)  // max_num_reorder_frames
 	mdfb := info.MaxNumRefFrames
 	if mdfb < 2 {
 		mdfb = 2
 	}
-	bw.ue(mdfb)                 // max_dec_frame_buffering
+	bw.ue(mdfb) // max_dec_frame_buffering
 
 	// rbsp_trailing_bits(): a single '1' bit followed by zero-pad to
 	// byte alignment.

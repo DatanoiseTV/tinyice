@@ -17,9 +17,10 @@ import (
 // sync with the set of currently-public mounts. Each tick it sends:
 //   - "add"    for mounts that just went public / are newly present,
 //   - "touch"  for mounts already advertised (required as a heartbeat so
-//              the directory doesn't age them out),
+//     the directory doesn't age them out),
 //   - "remove" for mounts that were advertised last tick but have gone
-//              away (source disconnected or went non-public).
+//     away (source disconnected or went non-public).
+//
 // The previous implementation only sent "add", so directory listings went
 // stale and dead entries lingered forever.
 func (s *Server) directoryReportingTask() {
