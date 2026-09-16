@@ -5,10 +5,12 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"io/fs"
 	"math/rand"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -512,22 +514,103 @@ func (s *Streamer) GetQueueNames() []string {
 	return res
 }
 
+// AudioExtensions are the file types the AutoDJ can decode. Exported so
+// the admin API's file browser and directory picker classify files the
+// same way the scanner does — three separate copies of this list had
+// already started to drift.
+var AudioExtensions = map[string]bool{
+	".mp3": true, ".ogg": true, ".opus": true, ".flac": true, ".wav": true,
+}
+
+// maxScannedTracks bounds one scan. A music directory with more playable
+// files than this is not a playlist, and the cap keeps a wrong music_dir
+// (a home directory, or /) from building an unbounded playlist.
+const maxScannedTracks = 50000
+
+// ScanMusicDir walks the music directory and adds every playable file
+// that is not already in the playlist, then refreshes the title cache.
+//
+// It previously did not read the directory at all: it re-cached titles
+// for the tracks already in the playlist and returned. The boot path
+// calls it exactly when the playlist is empty
+// (`if len(adj.Playlist) == 0`) and then calls Play(), so an AutoDJ
+// configured with nothing but a music_dir started, played nothing, and
+// never appeared as a source. The Studio's SCAN button was equally
+// inert on an empty playlist.
+//
+// Existing entries keep their position and id so a scan can be run on a
+// live playlist to pick up newly added files without reordering what is
+// already queued.
 func (s *Streamer) ScanMusicDir() error {
-	s.mu.Lock()
-	if s.MusicDir == "" {
-		s.mu.Unlock()
+	s.mu.RLock()
+	dir := s.MusicDir
+	s.mu.RUnlock()
+	if dir == "" {
 		return fmt.Errorf("music directory not configured")
 	}
 
-	// Clear cache
-	s.titleCache = make(map[string]string)
+	// Walk outside the lock: a large library, or one on a network mount,
+	// takes long enough that holding the streamer mutex across it would
+	// stall playback.
+	var found []string
+	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil // unreadable entry: skip it, don't abort the scan
+		}
+		if d.IsDir() {
+			if path != dir && strings.HasPrefix(d.Name(), ".") {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if strings.HasPrefix(d.Name(), ".") {
+			return nil
+		}
+		if AudioExtensions[strings.ToLower(filepath.Ext(d.Name()))] {
+			found = append(found, path)
+			if len(found) >= maxScannedTracks {
+				return fs.SkipAll
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("scan %s: %w", dir, err)
+	}
+	sort.Strings(found)
 
-	// Copy playlist to process outside of lock
+	s.mu.Lock()
+	have := make(map[string]bool, len(s.Playlist))
+	for _, ps := range s.Playlist {
+		have[ps.Path] = true
+	}
+	added := 0
+	for _, path := range found {
+		if have[path] {
+			continue
+		}
+		s.Playlist = append(s.Playlist, PlaylistSong{Path: path, ID: s.NextID})
+		s.NextID++
+		added++
+	}
+	if added > 0 {
+		s.PlaylistVersion++
+	}
+	s.titleCache = make(map[string]string)
 	currentPlaylist := make([]PlaylistSong, len(s.Playlist))
 	copy(currentPlaylist, s.Playlist)
 	s.mu.Unlock()
 
-	// Re-verify files and update cache in background
+	logger.L.Infow("AutoDJ scanned music directory",
+		"mount", s.OutputMount, "dir", dir, "found", len(found),
+		"added", added, "playlist_len", len(currentPlaylist))
+
+	if added > 0 {
+		s.broadcastIdle("playlist")
+	}
+
+	// Title lookups read tags off disk; do them in the background so a
+	// scan of a large library returns immediately.
 	go func() {
 		for _, ps := range currentPlaylist {
 			if _, err := os.Stat(ps.Path); err == nil {
@@ -634,7 +717,19 @@ func (s *Streamer) LoadPlaylist(filename string) error {
 			s.NextID++
 		}
 		s.LastPlaylist = filename
+		// The playlist was replaced wholesale, so the cursor has to go
+		// back to the start; it was left pointing into the old list and
+		// could sit past the end of the new one.
+		if s.CurrentPos >= len(s.Playlist) {
+			s.CurrentPos = 0
+		}
+		// Every other playlist mutation bumps this. Loading one did not,
+		// and since the SSE event carries only the version (not the
+		// playlist itself), the Studio had nothing telling it to refetch
+		// — a loaded .pls stayed invisible in the UI until a reload.
+		s.PlaylistVersion++
 		s.mu.Unlock()
+		s.broadcastIdle("playlist")
 	}
 	return nil
 }

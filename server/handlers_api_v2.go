@@ -1471,7 +1471,7 @@ func (s *Server) apiGetFiles(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	supportedExts := map[string]bool{".mp3": true, ".ogg": true, ".opus": true, ".flac": true, ".wav": true}
+	supportedExts := relay.AudioExtensions
 	for _, f := range entries {
 		ext := strings.ToLower(filepath.Ext(f.Name()))
 		if f.IsDir() || supportedExts[ext] {
