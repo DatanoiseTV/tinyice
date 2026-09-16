@@ -1506,3 +1506,11 @@ func (g *pauseGate) Read(p []byte) (int, error) {
 		}
 	}
 }
+
+// SetInjectMetadata sets the flag explicitly. ToggleInjectMetadata flips
+// it, which is wrong for a UI that posts the state it wants.
+func (s *Streamer) SetInjectMetadata(on bool) {
+	s.mu.Lock()
+	s.InjectMetadata = on
+	s.mu.Unlock()
+}

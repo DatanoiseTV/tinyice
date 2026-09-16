@@ -297,7 +297,9 @@ export function Studio() {
 
   const handleVolumeChange = useCallback((v: number) => {
     volume.value = v
-    api.post(`/api/autodj/${enc()}/volume`, { volume: v })
+    // The knob is 0..100; say so, or the server's "> 1 means percent"
+    // guess reads 1% as full volume.
+    api.post(`/api/autodj/${enc()}/volume`, { volume: v, unit: 'percent' })
   }, [])
 
   const handleMetadataToggle = useCallback((checked: boolean) => {
@@ -337,12 +339,27 @@ export function Studio() {
   }, [])
 
   const handleLoadPlaylist = useCallback(() => {
-    api.post(`/api/autodj/${enc()}/playlist/load`)
-      .then(() => fetchPlaylist())
+    // The endpoint needs the .pls to load; posting without one made the
+    // server load nothing and remember "." as the playlist name.
+    const chosen = selectedFile.value
+    if (!chosen || !chosen.toLowerCase().endsWith('.pls')) {
+      transportError.value = 'Select a .pls file in the library first, then press Load.'
+      return
+    }
+    api.post(`/api/autodj/${enc()}/playlist/load?file=${encodeURIComponent(chosen)}`)
+      .then(() => { transportError.value = ''; fetchPlaylist() })
+      .catch((e) => { transportError.value = (e as Error).message || 'Load failed' })
   }, [])
 
   const handleFolderClick = useCallback((file: FileInfo) => {
-    if (file.is_dir) fetchLibrary(file.path)
+    if (file.is_dir) {
+      fetchLibrary(file.path)
+      return
+    }
+    // Selecting a file is what "Load" acts on for .pls entries; nothing
+    // ever set selectedFile, so the highlight never moved and Load had
+    // no way to know which playlist was meant.
+    selectedFile.value = file.path
   }, [])
 
   const getFreqData = useCallback(() => null, [])

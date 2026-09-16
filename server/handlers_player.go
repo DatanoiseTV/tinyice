@@ -216,7 +216,13 @@ func (s *Server) handlePlayerLoadPlaylist(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	// filepath.Base("") is ".", which used to be accepted, loaded nothing
+	// and was then persisted as the AutoDJ's last_playlist.
 	playlistName := filepath.Base(filename)
+	if filename == "" || playlistName == "." || playlistName == string(filepath.Separator) {
+		http.Error(w, "file query parameter is required (the .pls to load)", http.StatusBadRequest)
+		return
+	}
 
 	if err := streamer.LoadPlaylist(playlistName); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -428,7 +434,21 @@ func (s *Server) handlePlayerMetadata(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	streamer.ToggleInjectMetadata()
+	// Honour an explicit {"enabled": bool} when the caller sends one. The
+	// Studio's toggle sets its switch optimistically and then posts the
+	// state it wants; a blind toggle here inverted it whenever the two
+	// disagreed (a double click, or two tabs open), leaving the switch
+	// showing the opposite of reality. No body still means "toggle", for
+	// the legacy form post.
+	var body struct {
+		Enabled *bool `json:"enabled"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&body)
+	if body.Enabled != nil {
+		streamer.SetInjectMetadata(*body.Enabled)
+	} else {
+		streamer.ToggleInjectMetadata()
+	}
 	metaState := streamer.GetStats().InjectMetadata
 
 	for _, adj := range s.Config.AutoDJs {
