@@ -457,6 +457,10 @@ func (s *Server) setupRoutes() *http.ServeMux {
 	})
 
 	mux.HandleFunc("/api/autodj/files", s.apiGetFiles)
+	// Registered as an exact path so it wins over the "/api/autodj/"
+	// prefix router below, which addresses a mount and has no meaning
+	// here: the browser exists to pick a directory before a mount has one.
+	mux.HandleFunc("/api/autodj/browse", s.apiBrowseMediaDirs)
 	// Handle /api/autodj/{mount}/... paths (frontend uses path-based mount routing)
 	// The frontend sends mount names URL-encoded (e.g. %2Fdemo for /demo),
 	// so we use RawPath to preserve the encoding before splitting.

@@ -3,6 +3,7 @@ import { signal } from '@preact/signals'
 import { api } from '@/lib/api'
 import { createSSE } from '@/lib/sse'
 import { EqBars } from '@/components/EqBars'
+import { DirectoryBrowser } from '@/components/DirectoryBrowser'
 import { autoDJState } from '@/types'
 import type { AutoDJEvent, AutoDJState, PlaylistItem } from '@/types'
 
@@ -54,6 +55,10 @@ interface AutoDJInstance {
   songCommandTimeout: number
   onPlayCommand: string
   onPlayCommandTimeout: number
+  visible: boolean
+  mpdEnabled: boolean
+  mpdPort: string
+  lastPlaylist: string
   queue: string[]
 }
 
@@ -76,6 +81,10 @@ function mapInstance(raw: AutoDJInstanceRaw): AutoDJInstance {
     songCommandTimeout: raw.song_command_timeout || 5,
     onPlayCommand: raw.on_play_command || '',
     onPlayCommandTimeout: raw.on_play_command_timeout || 10,
+    visible: raw.visible,
+    mpdEnabled: raw.mpd_enabled,
+    mpdPort: raw.mpd_port || '',
+    lastPlaylist: raw.last_playlist || '',
     queue: (raw.queue ?? []).map((q) => q.title || q.path),
   }
 }
@@ -91,12 +100,16 @@ const formMusicDir = signal('')
 const formFormat = signal('mp3')
 const formBitrate = signal(128)
 const formLoop = signal(true)
+const formVisible = signal(true)
+const formMPDEnabled = signal(false)
+const formMPDPort = signal('')
 const formInjectMetadata = signal(true)
 const formSongCommand = signal('')
 const formSongCommandTimeout = signal(5)
 const formOnPlayCommand = signal('')
 const formOnPlayCommandTimeout = signal(10)
 const saveError = signal('')
+const showBrowser = signal(false)
 
 function resetForm() {
   saveError.value = ''
@@ -106,12 +119,16 @@ function resetForm() {
   formFormat.value = 'mp3'
   formBitrate.value = 128
   formLoop.value = true
+  formVisible.value = true
+  formMPDEnabled.value = false
+  formMPDPort.value = ''
   formInjectMetadata.value = true
   formSongCommand.value = ''
   formSongCommandTimeout.value = 5
   formOnPlayCommand.value = ''
   formOnPlayCommandTimeout.value = 10
   editingMount.value = null
+  showBrowser.value = false
 }
 
 function openEditForm(inst: AutoDJInstance) {
@@ -121,6 +138,9 @@ function openEditForm(inst: AutoDJInstance) {
   formFormat.value = inst.format
   formBitrate.value = inst.bitrate
   formLoop.value = inst.loop
+  formVisible.value = inst.visible
+  formMPDEnabled.value = inst.mpdEnabled
+  formMPDPort.value = inst.mpdPort
   formInjectMetadata.value = inst.injectMetadata
   formSongCommand.value = inst.songCommand || ''
   formSongCommandTimeout.value = inst.songCommandTimeout || 5
@@ -139,6 +159,9 @@ async function saveAutoDJ() {
     format: formFormat.value,
     bitrate: formBitrate.value,
     loop: formLoop.value,
+    visible: formVisible.value,
+    mpd_enabled: formMPDEnabled.value,
+    mpd_port: formMPDPort.value,
     inject_metadata: formInjectMetadata.value,
     song_command: formSongCommand.value || undefined,
     song_command_timeout: formSongCommandTimeout.value || undefined,
@@ -163,8 +186,19 @@ async function saveAutoDJ() {
   }
 }
 
+// Deleting an AutoDJ drops its playlist and queue with it and there is no
+// undo, so it goes through a confirmation step rather than firing on the
+// first click of a small icon sitting next to the transport controls.
+const confirmDelete = signal<string | null>(null)
+
 async function deleteAutoDJ(mount: string) {
-  await api.del(`/api/autodj?mount=${encodeURIComponent(mount)}`)
+  try {
+    await api.del(`/api/autodj?mount=${encodeURIComponent(mount)}`)
+    loadError.value = ''
+  } catch (e) {
+    loadError.value = (e as Error).message || `Could not delete ${mount}`
+  }
+  confirmDelete.value = null
   loadAutoDJ()
 }
 
@@ -248,8 +282,18 @@ function InstanceCard({ inst }: { inst: AutoDJInstance }) {
           {inst.format} {inst.bitrate}kbps
         </span>
         {inst.songCommand && (
-          <span class="font-mono text-[10px] text-text-tertiary tracking-wider">
+          <span class="font-mono text-[10px] text-text-tertiary tracking-wider" title="Driven by an external song command">
             CMD
+          </span>
+        )}
+        {inst.mpdEnabled && inst.mpdPort && (
+          <span class="font-mono text-[10px] text-text-tertiary tracking-wider" title={`MPD control port ${inst.mpdPort}`}>
+            MPD {inst.mpdPort}
+          </span>
+        )}
+        {!inst.visible && (
+          <span class="font-mono text-[10px] text-text-tertiary tracking-wider" title="Not listed publicly; still streamable by URL">
+            UNLISTED
           </span>
         )}
         <div class="ml-auto flex items-center gap-1.5">
@@ -263,9 +307,19 @@ function InstanceCard({ inst }: { inst: AutoDJInstance }) {
       {/* Now Playing or Stopped */}
       {isStopped ? (
         <div class="flex items-center justify-between py-4">
-          <span class="text-sm text-text-tertiary">
-            Stopped &mdash; {inst.playlistLen} tracks
-          </span>
+          <div class="min-w-0">
+            <div class="text-sm text-text-tertiary">
+              Stopped &mdash; {inst.playlistLen} tracks
+              {inst.lastPlaylist ? ` from ${inst.lastPlaylist}` : ''}
+            </div>
+            {/* The music directory was fetched and dropped; when an
+                AutoDJ has no tracks it is almost always the answer. */}
+            {inst.musicDir && !inst.songCommand && (
+              <div class="font-mono text-[10px] text-text-tertiary truncate mt-0.5" title={inst.musicDir}>
+                {inst.musicDir}
+              </div>
+            )}
+          </div>
           <div class="flex items-center gap-2">
             <button
               onClick={() => handleTransport('play')}
@@ -288,7 +342,7 @@ function InstanceCard({ inst }: { inst: AutoDJInstance }) {
               </svg>
             </button>
             <button
-              onClick={() => deleteAutoDJ(inst.mount)}
+              onClick={() => { confirmDelete.value = inst.mount }}
               class="w-8 h-8 rounded-lg border border-border flex items-center justify-center text-danger hover:border-danger/30 transition-colors"
               aria-label="Delete AutoDJ"
               title="Delete AutoDJ"
@@ -363,6 +417,21 @@ function InstanceCard({ inst }: { inst: AutoDJInstance }) {
                 <path d="M6 18l8.5-6L6 6v12zm2-8.14L11.03 12 8 14.14V9.86zM16 6h2v12h-2z" />
               </svg>
             </button>
+            {/* Shuffle has always been in the model, the SSE event and the
+                API; the card just had no control for it. */}
+            <button
+              onClick={() => handleTransport('shuffle')}
+              class={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${
+                inst.shuffle ? 'text-accent' : 'text-text-secondary hover:text-text-primary'
+              }`}
+              aria-label="Shuffle"
+              aria-pressed={inst.shuffle}
+              title={inst.shuffle ? 'Shuffle on' : 'Shuffle off'}
+            >
+              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z" />
+              </svg>
+            </button>
 
             <div class="w-px h-6 bg-border mx-1" />
 
@@ -388,7 +457,7 @@ function InstanceCard({ inst }: { inst: AutoDJInstance }) {
               </svg>
             </button>
             <button
-              onClick={() => deleteAutoDJ(inst.mount)}
+              onClick={() => { confirmDelete.value = inst.mount }}
               class="w-8 h-8 rounded-lg border border-border flex items-center justify-center text-danger hover:border-danger/30 transition-colors"
               aria-label="Delete AutoDJ"
               title="Delete AutoDJ"
@@ -510,6 +579,45 @@ export function AutoDJ() {
         </div>
       )}
 
+      {confirmDelete.value && (
+        <div class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 overflow-y-auto">
+          <div class="flex min-h-full items-center justify-center p-4">
+            <div class="bg-surface-raised border border-border rounded-xl p-6 w-full max-w-sm">
+              <h2 class="text-lg font-bold text-text-primary mb-2">Delete AutoDJ</h2>
+              <p class="text-sm text-text-secondary mb-1">
+                Remove <span class="font-mono text-text-primary">{confirmDelete.value}</span>?
+              </p>
+              <p class="text-xs text-text-tertiary mb-5">
+                Its playlist and queue go with it. The music files on disk are
+                not touched.
+              </p>
+              <div class="flex justify-end gap-2">
+                <button
+                  onClick={() => { confirmDelete.value = null }}
+                  class="px-4 py-2 rounded-lg border border-border text-text-secondary hover:text-text-primary font-mono text-xs"
+                >
+                  CANCEL
+                </button>
+                <button
+                  onClick={() => deleteAutoDJ(confirmDelete.value as string)}
+                  class="px-4 py-2 rounded-lg bg-danger text-surface-base font-mono text-xs font-bold"
+                >
+                  DELETE
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showBrowser.value && (
+        <DirectoryBrowser
+          initialPath={formMusicDir.value}
+          onPick={(path) => { formMusicDir.value = path; showBrowser.value = false }}
+          onClose={() => { showBrowser.value = false }}
+        />
+      )}
+
       {/* New AutoDJ Modal */}
       {showForm.value && (
         <div class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 overflow-y-auto">
@@ -539,13 +647,25 @@ export function AutoDJ() {
               </div>
               <div>
                 <label class="text-text-secondary text-xs font-mono tracking-wider uppercase mb-1.5 block">MUSIC DIRECTORY</label>
-                <input
-                  type="text"
-                  value={formMusicDir.value}
-                  onInput={(e) => { formMusicDir.value = (e.target as HTMLInputElement).value }}
-                  placeholder="/path/to/music"
-                  class="bg-[rgba(255,255,255,0.03)] border border-border rounded-lg px-4 py-2.5 text-text-primary font-mono text-sm focus:border-accent outline-none w-full"
-                />
+                {/* The text input stays: pasting a known path is faster than
+                    clicking to it, and it is the only way in when no media
+                    root covers the library yet. */}
+                <div class="flex gap-2">
+                  <input
+                    type="text"
+                    value={formMusicDir.value}
+                    onInput={(e) => { formMusicDir.value = (e.target as HTMLInputElement).value }}
+                    placeholder="/path/to/music"
+                    class="bg-[rgba(255,255,255,0.03)] border border-border rounded-lg px-4 py-2.5 text-text-primary font-mono text-sm focus:border-accent outline-none flex-1 min-w-0"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => { showBrowser.value = true }}
+                    class="px-3 py-2.5 rounded-lg border border-border text-text-secondary hover:text-text-primary hover:border-accent font-mono text-xs shrink-0"
+                  >
+                    BROWSE
+                  </button>
+                </div>
               </div>
               <div class="grid grid-cols-2 gap-3">
                 <div>
@@ -555,9 +675,11 @@ export function AutoDJ() {
                     onChange={(e) => { formFormat.value = (e.target as HTMLSelectElement).value }}
                     class="bg-[rgba(255,255,255,0.03)] border border-border rounded-lg px-4 py-2.5 text-text-primary font-mono text-sm focus:border-accent outline-none w-full"
                   >
+                    {/* mp3 and opus are the only formats the encoder
+                        implements; "ogg" used to be offered here and
+                        silently produced an MP3 stream. */}
                     <option value="mp3">MP3</option>
                     <option value="opus">Opus</option>
-                    <option value="ogg">OGG</option>
                   </select>
                 </div>
                 <div>
@@ -589,6 +711,44 @@ export function AutoDJ() {
                   />
                   <span class="text-text-secondary text-xs font-mono tracking-wider uppercase">Inject Metadata</span>
                 </label>
+                <label class="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={formVisible.value}
+                    onChange={(e) => { formVisible.value = (e.target as HTMLInputElement).checked }}
+                    class="accent-accent"
+                  />
+                  <span class="text-text-secondary text-xs font-mono tracking-wider uppercase">Public</span>
+                </label>
+              </div>
+
+              {/* MPD control port. The config, the API and the instance
+                  response have always carried these; the form never did,
+                  so an MPD server could be configured only by editing
+                  tinyice.json by hand. */}
+              <div class="border-t border-border pt-3 mt-1">
+                <label class="flex items-center gap-2 cursor-pointer mb-2">
+                  <input
+                    type="checkbox"
+                    checked={formMPDEnabled.value}
+                    onChange={(e) => { formMPDEnabled.value = (e.target as HTMLInputElement).checked }}
+                    class="accent-accent"
+                  />
+                  <span class="text-text-secondary text-xs font-mono tracking-wider uppercase">MPD Control Port</span>
+                </label>
+                <p class="text-[10px] text-text-tertiary mb-2">
+                  Serves this AutoDJ's playlist over the MPD protocol so clients
+                  like ncmpcpp or MALP can drive it. Needs a free TCP port.
+                </p>
+                {formMPDEnabled.value && (
+                  <input
+                    type="text"
+                    value={formMPDPort.value}
+                    onInput={(e) => { formMPDPort.value = (e.target as HTMLInputElement).value }}
+                    placeholder="6600"
+                    class="bg-[rgba(255,255,255,0.03)] border border-border rounded-lg px-4 py-2.5 text-text-primary font-mono text-sm focus:border-accent outline-none w-full"
+                  />
+                )}
               </div>
               {/* Divider */}
               <div class="border-t border-border pt-3 mt-1">

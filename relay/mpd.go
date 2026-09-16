@@ -677,7 +677,7 @@ func (m *MPDServer) handleLsInfo(args string, resp *MPDResponse) {
 
 	dir := musicDir
 	if args != "" {
-		confined, err := confineToDir(musicDir, strings.Trim(args, "\""))
+		confined, err := ConfineToDir(musicDir, strings.Trim(args, "\""))
 		if err != nil {
 			resp.ACK(50, 0, "lsinfo", "no such directory")
 			return
@@ -697,7 +697,7 @@ func (m *MPDServer) handleLsInfo(args string, resp *MPDResponse) {
 
 func (m *MPDServer) handleAdd(args string, resp *MPDResponse) {
 	path := strings.Trim(args, "\"")
-	full, err := confineToDir(m.streamer.MusicDir, path)
+	full, err := ConfineToDir(m.streamer.MusicDir, path)
 	if err != nil {
 		resp.ACK(50, 0, "add", "no such song")
 		return
@@ -707,7 +707,7 @@ func (m *MPDServer) handleAdd(args string, resp *MPDResponse) {
 
 func (m *MPDServer) handleAddId(args string, resp *MPDResponse) {
 	path := strings.Trim(args, "\"")
-	full, err := confineToDir(m.streamer.MusicDir, path)
+	full, err := ConfineToDir(m.streamer.MusicDir, path)
 	if err != nil {
 		resp.ACK(50, 0, "addid", "no such song")
 		return

@@ -196,3 +196,29 @@ func TestAutoDJUpdateRestoresThePreviousConfigOnAFailedRestart(t *testing.T) {
 func quote(s string) string {
 	return `"` + strings.ReplaceAll(s, `\`, `\\`) + `"`
 }
+
+// "ogg" was offered by the admin form, accepted by the API and stored,
+// while every encoder path is `Format == "opus"` with MP3 as the
+// fallback — so the mount streamed MP3 and advertised audio/mpeg. An
+// unsupported format must be refused rather than silently ignored.
+func TestAutoDJUpdateRefusesAnUnsupportedFormat(t *testing.T) {
+	dir := t.TempDir()
+	dj := &config.AutoDJConfig{Name: "dj", Mount: "/a", MusicDir: dir, Format: "mp3",
+		Bitrate: 128, MPDEnabled: true, MPDPort: "16621", Visible: true}
+	s := newAutoDJTestServer(t, dj)
+
+	w := httptest.NewRecorder()
+	body := `{"music_dir":` + quote(dir) + `,"format":"ogg"}`
+	s.apiUpdateAutoDJ(w, autoDJRequest(http.MethodPut, "/api/v2/autodj?mount=/a", body))
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400: %s", w.Code, w.Body.String())
+	}
+	if dj.Format != "mp3" {
+		t.Errorf("format = %q, want mp3 unchanged", dj.Format)
+	}
+	// The rejection must happen before the running streamer is torn down,
+	// or refusing a bad format costs the operator their AutoDJ.
+	if s.StreamerM.GetStreamer("/a") == nil {
+		t.Error("/a has no streamer after a rejected update: it was torn down before validation")
+	}
+}

@@ -614,6 +614,13 @@ func (s *Server) apiCreateAutoDJ(w http.ResponseWriter, r *http.Request) {
 	if body.Format == "" {
 		body.Format = "mp3"
 	}
+	// Reject rather than silently store: the encoder only implements mp3
+	// and opus, and an accepted-but-ignored format is how "ogg" ended up
+	// on screen for AutoDJs that were streaming MP3.
+	if config.NormalizeAutoDJFormat(body.Format) != strings.ToLower(body.Format) {
+		jsonError(w, "format must be \"mp3\" or \"opus\"", http.StatusBadRequest)
+		return
+	}
 	if body.Bitrate == 0 {
 		body.Bitrate = 128
 	}
@@ -750,6 +757,14 @@ func (s *Server) apiUpdateAutoDJ(w http.ResponseWriter, r *http.Request) {
 	absMusicDir := ""
 	if body.MusicDir != "" {
 		absMusicDir, _ = filepath.Abs(body.MusicDir)
+	}
+
+	// Validate before anything is torn down. Everything below this point
+	// has already stopped the running streamer, so a late rejection would
+	// leave the mount with no AutoDJ at all.
+	if body.Format != "" && config.NormalizeAutoDJFormat(body.Format) != strings.ToLower(body.Format) {
+		jsonError(w, "format must be \"mp3\" or \"opus\"", http.StatusBadRequest)
+		return
 	}
 
 	// Snapshot the previous configuration so a failed restart can be
