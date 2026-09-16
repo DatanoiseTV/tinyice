@@ -555,9 +555,11 @@ export function AutoDJ() {
                     onChange={(e) => { formFormat.value = (e.target as HTMLSelectElement).value }}
                     class="bg-[rgba(255,255,255,0.03)] border border-border rounded-lg px-4 py-2.5 text-text-primary font-mono text-sm focus:border-accent outline-none w-full"
                   >
+                    {/* mp3 and opus are the only formats the encoder
+                        implements; "ogg" used to be offered here and
+                        silently produced an MP3 stream. */}
                     <option value="mp3">MP3</option>
                     <option value="opus">Opus</option>
-                    <option value="ogg">OGG</option>
                   </select>
                 </div>
                 <div>
