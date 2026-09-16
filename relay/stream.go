@@ -846,18 +846,28 @@ func (s *Stream) Subscribe(id string, burstSize int) (int64, chan struct{}) {
 			validStart = 0
 		}
 
-		// If we have an OggHead persistent storage, we want to start reading
-		// from the Buffer AFTER the initial headers to avoid duplicates.
-		if s.OggHeaderOffset > start {
-			start = s.OggHeaderOffset
+		// The current Ogg stream's headers are a HARD FLOOR, not a
+		// preference. Everything before OggHeaderOffset belongs to a
+		// previous Ogg stream with a different serial — the AutoDJ starts
+		// a fresh one per track, and the old header pages stay in the
+		// circular buffer. The floor used to be applied here and then
+		// undone by the alignment below (`start = oldestValid` walks
+		// backwards), so a listener could be handed several previous
+		// tracks' header pairs before any audio. ffmpeg skips to the
+		// chain that has audio; browsers latch onto the first chain,
+		// find it empty and play nothing. Measured on a live mount: five
+		// orphan OpusHead/OpusTags pairs, granule 0, in the first 515
+		// bytes.
+		floor := validStart
+		if s.OggHeaderOffset > floor && s.OggHeaderOffset <= head {
+			floor = s.OggHeaderOffset
 		}
-
-		if start < validStart {
-			start = validStart
+		if start < floor {
+			start = floor
 		}
 
 		// Prefer the oldest tracked page boundary that is still >= start and
-		// within the valid buffer range — this maximises the burst delivered
+		// within the valid range — this maximises the burst delivered
 		// to the listener. Falling back to LastPageOffset (newest page) used
 		// to cap the burst at near-zero whenever PageOffsets didn't happen
 		// to cover far enough back, which manifested as "client underrun
@@ -865,7 +875,7 @@ func (s *Stream) Subscribe(id string, burstSize int) (int64, chan struct{}) {
 		bestAlign := int64(-1)
 		oldestValid := int64(-1)
 		for _, po := range s.PageOffsets {
-			if po < validStart || po == 0 {
+			if po < floor || po == 0 {
 				continue
 			}
 			if oldestValid < 0 || po < oldestValid {
@@ -879,20 +889,17 @@ func (s *Stream) Subscribe(id string, burstSize int) (int64, chan struct{}) {
 		case bestAlign >= 0:
 			start = bestAlign
 		case oldestValid >= 0:
-			// Intended start is older than any tracked page — use the
-			// oldest we have, which is still newer than the buffer tail.
+			// Intended start is older than any tracked page at or after
+			// the floor — use the oldest such page.
 			start = oldestValid
-		case s.LastPageOffset >= validStart && s.LastPageOffset > 0:
+		case s.LastPageOffset >= floor && s.LastPageOffset > 0:
 			// Absolute last resort: at least align on the most recent page.
 			start = s.LastPageOffset
 		default:
 			// Nothing tracked yet — fall back to burst-based offset.
 			start = head - int64(burstSize)
-			if start < validStart {
-				start = validStart
-			}
-			if start < 0 {
-				start = 0
+			if start < floor {
+				start = floor
 			}
 		}
 	}
