@@ -71,6 +71,9 @@ export interface StreamEvent {
   listeners: number
   viewers?: number
   health: number
+  /** Whether a source is currently connected. Absent on /admin/events. */
+  live?: boolean
+  has_video?: boolean
   is_transcoded?: boolean
   // For transcoded outputs: the source mount + its format/bitrate
   // so the dashboard can render "<src-format> → <out-format>".

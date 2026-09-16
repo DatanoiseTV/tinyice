@@ -1,4 +1,5 @@
-import type { StatsEvent, StreamEvent, AutoDJEvent, StreamInfo } from '../types'
+import type { StatsEvent, StreamEvent, AutoDJEvent } from '../types'
+import type { GeoCity } from '../components/LiveGeoMap'
 import { redirectToLogin } from './api'
 
 // EventSource doesn't surface HTTP status codes — onerror just fires
@@ -25,7 +26,10 @@ type SSEEventMap = {
   stats: StatsEvent
   stream: StreamEvent
   autodj: AutoDJEvent
-  streams: StreamInfo[]
+  // Emitted by /admin/events on every tick (server/handlers_api.go).
+  // It was missing here, so the dashboard and kiosk subscribers to it
+  // didn't typecheck.
+  geo: GeoCity[]
 }
 
 type SSECallback<K extends keyof SSEEventMap> = (data: SSEEventMap[K]) => void

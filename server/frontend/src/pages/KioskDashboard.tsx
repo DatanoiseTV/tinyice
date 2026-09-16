@@ -1,5 +1,6 @@
 import { useEffect } from 'preact/hooks'
 import { signal } from '@preact/signals'
+import { STREAM_TTL_MS } from '@/lib/liveStreams'
 import { createSSE } from '../lib/sse'
 import { LiveGeoMap, type GeoCity } from '../components/LiveGeoMap'
 
@@ -50,6 +51,7 @@ type StreamEv = {
 }
 const stats = signal<StatsEv>({})
 const streams = signal<Record<string, StreamEv>>({})
+const lastSeen = new Map<string, number>()
 const geo = signal<GeoCity[]>([])
 const sseUp = signal(false)
 const tick = signal(0) // bumped every 40 ms by the local wall-clock timer
@@ -112,12 +114,32 @@ export function KioskDashboard() {
       sseUp.value = true
     })
     const offStream = sse.on('stream', (d: StreamEv) => {
+      lastSeen.set(d.mount, Date.now())
       streams.value = { ...streams.value, [d.mount]: d }
     })
+    // Drop mounts that stopped sending events — a disconnected source
+    // used to stay on the kiosk wall until the page was reloaded.
+    const sweep = setInterval(() => {
+      const now = Date.now()
+      const kept: Record<string, StreamEv> = {}
+      for (const [mount, ev] of Object.entries(streams.value)) {
+        const seen = lastSeen.get(mount)
+        if (seen === undefined) {
+          lastSeen.set(mount, now)
+          kept[mount] = ev
+        } else if (now - seen < STREAM_TTL_MS) {
+          kept[mount] = ev
+        }
+      }
+      if (Object.keys(kept).length !== Object.keys(streams.value).length) {
+        streams.value = kept
+      }
+    }, 2000)
     const offGeo = sse.on('geo', (d: GeoCity[]) => {
       geo.value = Array.isArray(d) ? d : []
     })
     return () => {
+      clearInterval(sweep)
       offStats()
       offStream()
       offGeo()

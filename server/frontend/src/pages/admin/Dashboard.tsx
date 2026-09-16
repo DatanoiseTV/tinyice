@@ -1,6 +1,7 @@
 import { signal } from '@preact/signals'
 import { useEffect } from 'preact/hooks'
 import { createSSE } from '../../lib/sse'
+import { LiveStreamTracker } from '../../lib/liveStreams'
 import { StatCard } from '../../components/StatCard'
 import { ListenerHistoryChart } from '../../components/ListenerHistoryChart'
 import { TrafficTotalsCard } from '../../components/TrafficTotalsCard'
@@ -21,6 +22,7 @@ const stats = signal<StatsEvent>({
 })
 
 const streams = signal<StreamEvent[]>([])
+const tracker = new LiveStreamTracker<StreamEvent>()
 const connected = signal(false)
 const timeRange = signal<'1H' | '24H' | '7D' | '30D' | '90D' | '1Y' | 'ALL'>('1H')
 
@@ -68,13 +70,16 @@ export function Dashboard() {
     })
 
     const offStream = sse.on('stream', (data: StreamEvent) => {
-      streams.value = [
-        ...streams.value.filter((s) => s.mount !== data.mount),
-        data,
-      ].sort((a, b) => a.mount.localeCompare(b.mount))
+      streams.value = tracker.upsert(streams.value, data)
     })
+    // Mounts that stop sending events have gone away; without this sweep
+    // a disconnected source stayed on the dashboard until a reload.
+    const sweep = setInterval(() => {
+      streams.value = tracker.prune(streams.value)
+    }, 2000)
 
     return () => {
+      clearInterval(sweep)
       offStats()
       offStream()
       sse.close()
