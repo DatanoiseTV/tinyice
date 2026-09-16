@@ -13,10 +13,10 @@ import (
 
 // audioExts are the extensions the AutoDJ can actually play. The browser
 // counts them per directory so an operator can tell a music library from
-// its neighbours without opening every candidate.
-var audioExts = map[string]bool{
-	".mp3": true, ".ogg": true, ".opus": true, ".flac": true, ".wav": true,
-}
+// its neighbours without opening every candidate. Shared with the
+// scanner so a directory's reported track count matches what a scan
+// would actually add.
+var audioExts = relay.AudioExtensions
 
 const (
 	// browseMaxEntries bounds one response. A directory with more
