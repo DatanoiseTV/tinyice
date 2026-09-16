@@ -236,6 +236,10 @@ func (g *GeoLookup) fetchAndSwap() error {
 	return lastErr
 }
 
+// geoipClient carries the outbound address policy; the 5 minute bound
+// is on the request context, since the download can be large.
+var geoipClient = NewOutboundHTTPClient(0)
+
 func (g *GeoLookup) downloadTo(url, dest string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
@@ -244,7 +248,9 @@ func (g *GeoLookup) downloadTo(url, dest string) error {
 		return err
 	}
 	req.Header.Set("User-Agent", dbipUserAgent)
-	resp, err := http.DefaultClient.Do(req)
+	// The database URL is configurable, so the download goes through the
+	// same dial-time address policy as every other outbound request.
+	resp, err := geoipClient.Do(req)
 	if err != nil {
 		return err
 	}

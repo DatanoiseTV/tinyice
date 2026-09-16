@@ -7,7 +7,6 @@ import (
 	"io"
 	"math"
 	"math/rand"
-	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -72,18 +71,12 @@ func NewRelayManager(r *Relay) *RelayManager {
 	return &RelayManager{
 		instances: make(map[string]*RelayInstance),
 		relay:     r,
-		client: &http.Client{
-			Timeout: 0,
-			Transport: &http.Transport{
-				DialContext: (&net.Dialer{
-					Timeout:   10 * time.Second,
-					KeepAlive: 30 * time.Second,
-				}).DialContext,
-				TLSHandshakeTimeout:   10 * time.Second,
-				ResponseHeaderTimeout: 15 * time.Second,
-				IdleConnTimeout:       90 * time.Second,
-			},
-		},
+		// Timeout 0: a pull streams indefinitely and is bounded by the
+		// idle watchdog in performPull instead. The dialer carries the
+		// outbound address policy, so a redirect or a hostname that
+		// resolves into the private network cannot turn a relay into an
+		// exfiltration channel for an internal service.
+		client: NewOutboundHTTPClient(0),
 	}
 }
 

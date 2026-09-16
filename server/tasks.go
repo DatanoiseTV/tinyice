@@ -166,7 +166,7 @@ func (s *Server) reportToDirectoryAction(st relay.StreamStats, action, sid strin
 		return ""
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := outboundClient.Do(req)
 	if err != nil {
 		logger.L.Warnw("Failed to report to directory server", "error", err, "action", action, "mount", st.MountName)
 		return ""

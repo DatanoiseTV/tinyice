@@ -32,6 +32,10 @@ func TestRelayPullGivesUpOnASilentUpstream(t *testing.T) {
 	defer srv.Close()
 
 	rm := NewRelayManager(NewRelay(false, nil))
+	// The production client refuses loopback targets (SSRF policy), and
+	// httptest only listens on loopback; this test is about the idle
+	// watchdog, so give it a plain client.
+	rm.client = srv.Client()
 	inst := &RelayInstance{URL: srv.URL, Mount: "/pull"}
 
 	done := make(chan struct{})
