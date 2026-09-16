@@ -354,7 +354,10 @@ func (s *Server) deliverWebhook(wh *config.WebhookConfig, event string, data map
 		req.Header.Set(k, out)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	// Not http.DefaultClient: a webhook URL is operator-supplied, and the
+	// dial-time address policy is what stops a redirect or a hostname
+	// resolving into the private network.
+	resp, err := outboundClient.Do(req)
 	if err != nil {
 		logger.L.Warnw("Webhook delivery failed", "id", wh.ID, "url", wh.URL, "error", err)
 		return

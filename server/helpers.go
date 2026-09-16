@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/DatanoiseTV/tinyice/logger"
+	"github.com/DatanoiseTV/tinyice/relay"
 )
 
 // requireMountAccess wraps the common auth + mount-parameter + hasAccess
@@ -39,15 +40,44 @@ func (s *Server) requireMountAccess(w http.ResponseWriter, r *http.Request, moun
 	return mount, true
 }
 
+// outboundClient is the HTTP client for every operator-configured
+// destination the server reaches out to (webhooks, the YP directory).
+// http.DefaultClient has no dial-time address policy, so a webhook URL
+// that redirects — or whose hostname resolves — into the private network
+// reached it. Per-request timeouts come from the request's context.
+var outboundClient = relay.NewOutboundHTTPClient(0)
+
+// safeNextPath sanitises a post-login redirect target. Only same-origin
+// absolute paths are accepted: anything with a scheme, an authority
+// ("//evil.example" and its "/\evil.example" browser-equivalent) or a
+// relative shape falls back to /admin. Without this the ?next= that
+// /kiosk already emits would be an open redirect.
+func safeNextPath(next string) string {
+	const fallback = "/admin"
+	if next == "" || next[0] != '/' {
+		return fallback
+	}
+	if len(next) > 1 && (next[1] == '/' || next[1] == '\\') {
+		return fallback
+	}
+	u, err := url.Parse(next)
+	if err != nil || u.Scheme != "" || u.Host != "" {
+		return fallback
+	}
+	return next
+}
+
 // validateOutboundURL rejects URLs that we shouldn't allow users to point
 // outbound HTTP clients at — loopback, RFC1918 private ranges, link-local,
 // multicast, unspecified addresses. Used to keep webhook + relay URL fields
 // from being turned into SSRF vectors.
 //
-// Hosts given as names are not resolved here (DNS rebinding would defeat
-// that anyway); we check only literal IP addresses. Callers that want
-// stronger protection should additionally wrap their http.Client with a
-// DialContext that blocks internal ranges at connect time.
+// Hosts given as names are not resolved here — this runs at configuration
+// time and both DNS and any redirect the remote returns are under the
+// other side's control. The enforcement that actually holds is in the
+// dialer (relay.OutboundDialer), which applies the same policy to the
+// address of every connection the outbound clients open; this function is
+// the early, legible error for an operator typing a URL.
 func validateOutboundURL(raw string) error {
 	u, err := url.Parse(raw)
 	if err != nil {
@@ -62,11 +92,12 @@ func validateOutboundURL(raw string) error {
 	if host == "" {
 		return fmt.Errorf("URL has no host")
 	}
-	// If the host is a literal IP, refuse private / loopback / link-local / multicast.
+	// If the host is a literal IP, refuse private / loopback / link-local /
+	// multicast / CGNAT. Same policy the dialer enforces at connect time,
+	// so a name or a redirect cannot reach anything this refuses.
 	if ip := net.ParseIP(host); ip != nil {
-		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() ||
-			ip.IsLinkLocalMulticast() || ip.IsMulticast() || ip.IsUnspecified() {
-			return fmt.Errorf("URL points at a non-routable address (%s)", ip)
+		if err := relay.BlockedOutboundIP(ip); err != nil {
+			return fmt.Errorf("URL points at a non-routable address: %w", err)
 		}
 	}
 	// Block localhost by name — a common footgun.

@@ -35,21 +35,21 @@ const (
 const autoDJSourceLabel = "autodj"
 
 type Streamer struct {
-	Name           string
-	OutputMount    string
-	MusicDir       string
-	Format         string
-	Bitrate        int
-	Playlist       []PlaylistSong
-	Queue          []string
-	CurrentPos     int
-	State          StreamerState
-	Loop           bool
-	Shuffle        bool
-	InjectMetadata bool
-	Visible        bool
-	MPDPassword    string
-	LastPlaylist        string
+	Name                 string
+	OutputMount          string
+	MusicDir             string
+	Format               string
+	Bitrate              int
+	Playlist             []PlaylistSong
+	Queue                []string
+	CurrentPos           int
+	State                StreamerState
+	Loop                 bool
+	Shuffle              bool
+	InjectMetadata       bool
+	Visible              bool
+	MPDPassword          string
+	LastPlaylist         string
 	SongCommand          string
 	SongCommandTimeout   int
 	OnPlayCommand        string
@@ -61,9 +61,10 @@ type Streamer struct {
 	cancel context.CancelFunc
 	mu     sync.RWMutex
 
-	fileCancel   context.CancelFunc
-	titleCache   map[string]string
-	titleFetchWg sync.WaitGroup
+	fileCancel    context.CancelFunc
+	titleCache    map[string]string
+	titleFetching map[string]struct{} // in-flight tag reads, keyed by path
+	titleFetchWg  sync.WaitGroup
 
 	// Stats
 	BytesStreamed       int64
@@ -82,11 +83,11 @@ type Streamer struct {
 	// so reported position stays honest instead of counting paused
 	// wall-clock as playback progress.
 	CurrentPausedNanos atomic.Int64
-	MPDServer           *MPDServer
-	NextID              int
-	PlaylistVersion     uint32
-	idleCh              chan string
-	stateCh             chan struct{}
+	MPDServer          *MPDServer
+	NextID             int
+	PlaylistVersion    uint32
+	idleCh             chan string
+	stateCh            chan struct{}
 }
 
 type StreamerManager struct {
@@ -133,6 +134,14 @@ func NewStreamerManager(r *Relay, cfg *config.Config) *StreamerManager {
 func (s *Streamer) Play() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	// A non-looping playlist that ran to the end leaves CurrentPos past
+	// the last entry and the state Stopped. Without this rewind, pressing
+	// Play again re-entered the same "past the end, not looping" branch
+	// and stopped immediately — the AutoDJ could never be restarted
+	// without an edit to its playlist.
+	if s.CurrentPos >= len(s.Playlist) {
+		s.CurrentPos = 0
+	}
 	s.State = StatePlaying
 	s.signalStateChange()
 }
@@ -323,6 +332,7 @@ func (s *Streamer) RemoveFromPlaylistByID(id int) bool {
 	for i, p := range s.Playlist {
 		if p.ID == id {
 			s.Playlist = append(s.Playlist[:i], s.Playlist[i+1:]...)
+			s.shiftCursorAfterRemove(i)
 			s.PlaylistVersion++
 			s.broadcastIdle("playlist")
 			return true
@@ -394,23 +404,48 @@ func (s *Streamer) GetSongTitle(path string) string {
 	s.mu.RUnlock()
 
 	// Trigger background fetch if not already in progress
-	go s.fetchTitleAndCache(path)
+	s.fetchTitleAndCache(path)
 
 	// Fallback to filename if no title found (yet)
 	return filepath.Base(path)
 }
 
+// titleFetchSem bounds concurrent ID3 reads across all streamers. Each
+// fetch opens a file and parses tags; GetPlaylistInfo calls GetSongTitle
+// once per entry, so an uncapped fetch meant a 200-track playlist spawned
+// hundreds of goroutines and file handles at once — twice over, since
+// GetSongTitle spawned a goroutine that spawned another.
+var titleFetchSem = make(chan struct{}, 8)
+
 func (s *Streamer) fetchTitleAndCache(path string) {
+	// Deduplicate in-flight fetches for the same file: repeated calls
+	// (the playlist endpoint on every refresh) otherwise re-read the same
+	// tags concurrently.
+	s.mu.Lock()
+	if _, cached := s.titleCache[path]; cached {
+		s.mu.Unlock()
+		return
+	}
+	if s.titleFetching == nil {
+		s.titleFetching = make(map[string]struct{})
+	}
+	if _, busy := s.titleFetching[path]; busy {
+		s.mu.Unlock()
+		return
+	}
+	s.titleFetching[path] = struct{}{}
+	s.mu.Unlock()
+
 	s.titleFetchWg.Add(1)
 	go func() {
 		defer s.titleFetchWg.Done()
-
-		s.mu.Lock()
-		if _, ok := s.titleCache[path]; ok {
+		titleFetchSem <- struct{}{}
+		defer func() { <-titleFetchSem }()
+		defer func() {
+			s.mu.Lock()
+			delete(s.titleFetching, path)
 			s.mu.Unlock()
-			return // Already fetched by another concurrent call
-		}
-		s.mu.Unlock()
+		}()
 
 		title := filepath.Base(path)
 
@@ -628,6 +663,8 @@ func (s *Streamer) SetPlaylist(p []string) {
 		s.Playlist = append(s.Playlist, PlaylistSong{Path: path, ID: s.NextID})
 		s.NextID++
 	}
+	// A wholesale replacement invalidates the old cursor.
+	s.CurrentPos = 0
 	s.PlaylistVersion++
 	s.broadcastIdle("playlist")
 }
@@ -656,14 +693,33 @@ func (s *Streamer) RemoveFromPlaylist(idx int) {
 	defer s.mu.Unlock()
 	if idx >= 0 && idx < len(s.Playlist) {
 		s.Playlist = append(s.Playlist[:idx], s.Playlist[idx+1:]...)
+		s.shiftCursorAfterRemove(idx)
 		s.PlaylistVersion++
 		s.broadcastIdle("playlist")
+	}
+}
+
+// shiftCursorAfterRemove keeps CurrentPos pointing at the same upcoming
+// track after an entry is removed. CurrentPos is the index the loop will
+// read NEXT, so removing an entry before it shifts everything down by one
+// and, uncorrected, the playlist silently skipped a track (or replayed
+// one) on every edit. Caller holds s.mu.
+func (s *Streamer) shiftCursorAfterRemove(idx int) {
+	if idx < s.CurrentPos {
+		s.CurrentPos--
+	}
+	if s.CurrentPos < 0 {
+		s.CurrentPos = 0
+	}
+	if s.CurrentPos > len(s.Playlist) {
+		s.CurrentPos = len(s.Playlist)
 	}
 }
 
 func (s *Streamer) ClearPlaylist() {
 	s.mu.Lock()
 	s.Playlist = []PlaylistSong{}
+	s.CurrentPos = 0
 	s.PlaylistVersion++
 	s.mu.Unlock()
 	s.SavePlaylist()
@@ -799,10 +855,10 @@ type StreamerStats struct {
 	// identify the track actually playing, which is what a UI needs to
 	// highlight the right row (-1 when the track came from the queue or
 	// an external song command).
-	CurrentID      int
-	CurrentPos     int
-	PlaylistPos    int
-	PlaylistLen    int
+	CurrentID   int
+	CurrentPos  int
+	PlaylistPos int
+	PlaylistLen int
 	// PlaylistVersion bumps on every playlist mutation. Clients watch it
 	// to know when to refetch the playlist, so the live event feed
 	// doesn't have to carry the whole array on every tick.
@@ -831,26 +887,26 @@ func (s *Streamer) GetStats() StreamerStats {
 	}
 
 	return StreamerStats{
-		Name:           s.Name,
-		Mount:          s.OutputMount,
-		State:          s.State,
-		CurrentSong:    s.CurrentFile,
-		StartTime:      s.CurrentFileTime,
-		Duration:       s.CurrentFileDuration,
-		CurrentID:      s.CurrentPlayingID,
+		Name:            s.Name,
+		Mount:           s.OutputMount,
+		State:           s.State,
+		CurrentSong:     s.CurrentFile,
+		StartTime:       s.CurrentFileTime,
+		Duration:        s.CurrentFileDuration,
+		CurrentID:       s.CurrentPlayingID,
 		CurrentPos:      s.CurrentPlayingPos,
 		PlaylistPos:     s.CurrentPos,
 		PlaylistVersion: s.PlaylistVersion,
 		PausedFor:       time.Duration(s.CurrentPausedNanos.Load()),
-		PlaylistLen:    len(s.Playlist),
-		Shuffle:        s.Shuffle,
-		MPDPort:        mpdPort,
-		MPDPassword:    mpdPassword,
-		MusicDir:       s.MusicDir,
-		Loop:           s.Loop,
-		InjectMetadata: s.InjectMetadata,
-		Visible:        s.Visible,
-		LastPlaylist:   s.LastPlaylist,
+		PlaylistLen:     len(s.Playlist),
+		Shuffle:         s.Shuffle,
+		MPDPort:         mpdPort,
+		MPDPassword:     mpdPassword,
+		MusicDir:        s.MusicDir,
+		Loop:            s.Loop,
+		InjectMetadata:  s.InjectMetadata,
+		Visible:         s.Visible,
+		LastPlaylist:    s.LastPlaylist,
 	}
 }
 
@@ -873,32 +929,32 @@ func (sm *StreamerManager) StartStreamer(name, mount, musicDir string, loop bool
 	}
 
 	s := &Streamer{
-		Name:              name,
-		OutputMount:       mount,
-		MusicDir:          absMusicDir,
-		Format:            format,
-		Bitrate:           bitrate,
-		Playlist:          initialPlaylist,
-		State:             StateStopped,
-		Loop:              loop,
-		InjectMetadata:    injectMetadata,
-		Visible:           visible,
-		MPDPassword:       mpdPassword,
-		LastPlaylist:       lastPlaylist,
+		Name:                 name,
+		OutputMount:          mount,
+		MusicDir:             absMusicDir,
+		Format:               format,
+		Bitrate:              bitrate,
+		Playlist:             initialPlaylist,
+		State:                StateStopped,
+		Loop:                 loop,
+		InjectMetadata:       injectMetadata,
+		Visible:              visible,
+		MPDPassword:          mpdPassword,
+		LastPlaylist:         lastPlaylist,
 		SongCommand:          songCommand,
 		SongCommandTimeout:   songCommandTimeout,
 		OnPlayCommand:        onPlayCommand,
 		OnPlayCommandTimeout: onPlayCommandTimeout,
 		relay:                sm.relay,
-		ctx:               ctx,
-		cancel:            cancel,
-		titleCache:        make(map[string]string),
-		NextID:            nextID, // Start NextID after initial playlist
-		CurrentPlayingPos: -1,
-		CurrentPlayingID:  -1,
-		PlaylistVersion:   1,
-		idleCh:            make(chan string, 10),
-		stateCh:           make(chan struct{}, 1),
+		ctx:                  ctx,
+		cancel:               cancel,
+		titleCache:           make(map[string]string),
+		NextID:               nextID, // Start NextID after initial playlist
+		CurrentPlayingPos:    -1,
+		CurrentPlayingID:     -1,
+		PlaylistVersion:      1,
+		idleCh:               make(chan string, 10),
+		stateCh:              make(chan struct{}, 1),
 	}
 
 	if mpdEnabled && mpdPort != "" {
@@ -1005,6 +1061,21 @@ func (sm *StreamerManager) GetStreamer(mount string) *Streamer {
 	return sm.instances[mount]
 }
 
+// IndexOfPlaylistID maps a stable playlist ID to its current index, or
+// -1. MPD's *id commands address entries by ID; treating the ID as
+// index+1 (as this server used to) targets the wrong track as soon as
+// anything has been removed.
+func (s *Streamer) IndexOfPlaylistID(id int) int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for i, p := range s.Playlist {
+		if p.ID == id {
+			return i
+		}
+	}
+	return -1
+}
+
 func (s *Streamer) MovePlaylistItem(from, to int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1016,6 +1087,14 @@ func (s *Streamer) MovePlaylistItem(from, to int) {
 	s.Playlist = append(s.Playlist[:from], s.Playlist[from+1:]...)
 	// Insert
 	s.Playlist = append(s.Playlist[:to], append([]PlaylistSong{item}, s.Playlist[to:]...)...)
+	// Track the cursor through the move so reordering doesn't skip or
+	// repeat the next track.
+	switch {
+	case from < s.CurrentPos && to >= s.CurrentPos:
+		s.CurrentPos--
+	case from >= s.CurrentPos && to < s.CurrentPos:
+		s.CurrentPos++
+	}
 	s.PlaylistVersion++
 	s.broadcastIdle("playlist")
 }
@@ -1244,6 +1323,14 @@ func (sm *StreamerManager) streamFile(ctx context.Context, s *Streamer, path str
 	// Update stream metadata under the output stream's mutex so concurrent
 	// Snapshot / listener reads see a coherent set of fields.
 	output := sm.relay.GetOrCreateStream(s.OutputMount)
+	// Don't write into a mount a live encoder owns. The label used to be
+	// assigned unconditionally, which both mislabelled the source in the
+	// admin UI and let the AutoDJ interleave its bytes with the
+	// encoder's — torn frames for every listener.
+	if !output.ClaimSourceIfFree(autoDJSourceLabel) {
+		return fmt.Errorf("mount %s already has a live source (%s); AutoDJ standing by",
+			s.OutputMount, output.GetSourceIP())
+	}
 	output.mu.Lock()
 	if s.InjectMetadata {
 		output.CurrentSong = s.CurrentFile
@@ -1255,7 +1342,6 @@ func (sm *StreamerManager) streamFile(ctx context.Context, s *Streamer, path str
 	// uses "relay-pull" and WebRTC uses "webrtc-source" — but the AutoDJ
 	// writes in-process and left the field empty, so the admin UI showed a
 	// playing AutoDJ mount as "No source" with a grey (offline) dot.
-	output.SourceIP = autoDJSourceLabel
 	output.Bitrate = fmt.Sprintf("%d", s.Bitrate)
 	if s.Format == "opus" {
 		output.ContentType = "audio/ogg"
@@ -1299,28 +1385,38 @@ func (sm *StreamerManager) streamFile(ctx context.Context, s *Streamer, path str
 		}()
 	}
 
-	// Apply the streamer's volume setting (0..1) to the PCM stream before
-	// it reaches the encoder. When Volume is 1.0 the wrapper is a no-op.
-	var pcm io.Reader = decoder
-	if gain := s.GetVolume(); gain < 1.0 {
-		pcm = newGainReader(pcm, gain)
-	}
-	// Pause support: blocks the encoder's reads while paused so the track
-	// resumes in place rather than being cancelled.
-	pcm = newPauseGate(ctx, s, pcm)
+	pcm := s.buildPCMChain(ctx, decoder, decoder.SampleRate())
 
 	if s.Format == "opus" {
-		// Opus encoder is locked at 48 kHz; resample if the file is at a
-		// different rate so playback isn't sped up / slowed down.
-		if decoder.SampleRate() != 48000 {
-			pcm = NewLinearResampler(pcm, decoder.SampleRate(), 48000)
-		}
 		EncodeOpus(ctx, sm.relay, output, pcm, s.Bitrate, &s.BytesStreamed, true)
 	} else {
 		EncodeMP3(ctx, sm.relay, output, pcm, s.Bitrate, &s.BytesStreamed, true, decoder.SampleRate())
 	}
 
 	return nil
+}
+
+// buildPCMChain assembles the reader the encoder pulls from: volume, then
+// resampling for Opus, then the pause gate.
+//
+// The pause gate must stay OUTERMOST. The encoders discover it by type-
+// asserting the reader they were handed (pauseAware) so they can subtract
+// paused time from their wall-clock pacing. The resampler used to be
+// applied on top of the gate, which hid it: pausing an Opus AutoDJ on any
+// file that wasn't already 48 kHz left the encoder believing it was
+// behind schedule, and on resume it dumped the rest of the track into the
+// ring buffer as fast as the CPU allowed.
+func (s *Streamer) buildPCMChain(ctx context.Context, decoded io.Reader, srcRate int) io.Reader {
+	pcm := decoded
+	if gain := s.GetVolume(); gain < 1.0 {
+		pcm = newGainReader(pcm, gain)
+	}
+	if s.Format == "opus" && srcRate != 48000 {
+		// The Opus encoder is locked at 48 kHz; resample so playback
+		// isn't sped up / slowed down.
+		pcm = NewLinearResampler(pcm, srcRate, 48000)
+	}
+	return newPauseGate(ctx, s, pcm)
 }
 
 // gainReader multiplies every S16LE stereo sample it passes through by a
@@ -1375,9 +1471,9 @@ func (g *gainReader) Read(p []byte) (int, error) {
 // schedule" and they would dump the rest of the file into the ring buffer
 // as fast as the CPU allows.
 type pauseGate struct {
-	src        io.Reader
-	s          *Streamer
-	ctx        context.Context
+	src         io.Reader
+	s           *Streamer
+	ctx         context.Context
 	pausedTotal atomic.Int64 // nanoseconds spent blocked
 }
 
@@ -1419,4 +1515,12 @@ func (g *pauseGate) Read(p []byte) (int, error) {
 		case <-time.After(poll):
 		}
 	}
+}
+
+// SetInjectMetadata sets the flag explicitly. ToggleInjectMetadata flips
+// it, which is wrong for a UI that posts the state it wants.
+func (s *Streamer) SetInjectMetadata(on bool) {
+	s.mu.Lock()
+	s.InjectMetadata = on
+	s.mu.Unlock()
 }

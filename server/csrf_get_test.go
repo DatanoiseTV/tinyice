@@ -56,3 +56,52 @@ func TestMutatingHandlersRefuseGETWithSessionCookie(t *testing.T) {
 		t.Errorf("POST with CSRF token did not create the user (status %d)", w.Code)
 	}
 }
+
+// checkAuth also accepts HTTP Basic, and /admin/metadata answers with a
+// `WWW-Authenticate: Basic realm="TinyIce"` challenge, so a browser that
+// has ever authenticated there re-attaches those credentials to every
+// same-origin request — including one a third-party page triggers. With
+// no `sid` cookie present, isCSRFSafe used to call that safe, so such a
+// POST was a complete, token-free mutation.
+func TestMutatingHandlersRefuseBasicAuthWithoutACSRFToken(t *testing.T) {
+	hashed, err := config.HashPassword("hunter2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	admin := &config.User{Username: "admin", Role: config.RoleSuperAdmin,
+		Password: hashed, Mounts: map[string]string{}}
+	s := &Server{
+		Config: &config.Config{
+			ConfigPath: filepath.Join(t.TempDir(), "tinyice.json"),
+			Users:      map[string]*config.User{"admin": admin},
+			Mounts:     map[string]string{},
+		},
+		sessions:     make(map[string]*session),
+		authAttempts: make(map[string]*authAttempt),
+		scanAttempts: make(map[string]*scanAttempt),
+	}
+
+	r := httptest.NewRequest(http.MethodPost, "/admin/add-user?username=evil&password=pw", nil)
+	r.SetBasicAuth("admin", "hunter2")
+	r.RemoteAddr = "198.51.100.10:1"
+	w := httptest.NewRecorder()
+	s.handleAddUser(w, r)
+
+	if w.Code != http.StatusForbidden {
+		t.Errorf("Basic-authenticated POST with no CSRF token returned %d, want 403", w.Code)
+	}
+	if _, created := s.Config.Users["evil"]; created {
+		t.Error("the request created the user — CSRF via cached Basic credentials")
+	}
+}
+
+// A Bearer token cannot be attached by a cross-origin form, so token
+// clients must keep working without a CSRF token.
+func TestBearerRequestsStayCSRFSafe(t *testing.T) {
+	s := &Server{Config: &config.Config{}}
+	r := httptest.NewRequest(http.MethodPost, "/admin/add-user", nil)
+	r.Header.Set("Authorization", "Bearer sometoken")
+	if !s.isCSRFSafe(r) {
+		t.Error("a Bearer-authenticated POST was refused")
+	}
+}

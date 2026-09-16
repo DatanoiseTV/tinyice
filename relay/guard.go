@@ -2,6 +2,8 @@ package relay
 
 import (
 	"fmt"
+	"path/filepath"
+	"strings"
 
 	"github.com/DatanoiseTV/tinyice/logger"
 )
@@ -30,4 +32,28 @@ func recoverIngestErr(what string, remote interface{}, err *error) {
 			"path", what, "remote", fmt.Sprintf("%v", remote), "panic", fmt.Sprintf("%v", r))
 		*err = fmt.Errorf("%s ingest panicked: %v", what, r)
 	}
+}
+
+// confineToDir resolves rel against base and refuses anything that
+// escapes it. MPD path arguments (add, addid, lsinfo, load) come
+// straight off the wire and were joined into the music directory
+// unchecked, so "../../.." walked the filesystem — listing it via
+// lsinfo, and adding arbitrary files to the playlist.
+func confineToDir(base, rel string) (string, error) {
+	absBase, err := filepath.Abs(base)
+	if err != nil {
+		return "", err
+	}
+	if resolved, err := filepath.EvalSymlinks(absBase); err == nil {
+		absBase = resolved
+	}
+	joined := filepath.Join(absBase, rel)
+	if resolved, err := filepath.EvalSymlinks(joined); err == nil {
+		joined = resolved
+	}
+	r, err := filepath.Rel(absBase, joined)
+	if err != nil || r == ".." || strings.HasPrefix(r, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("path %q escapes %s", rel, base)
+	}
+	return joined, nil
 }

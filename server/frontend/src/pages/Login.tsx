@@ -1,21 +1,24 @@
 import { signal } from '@preact/signals'
+import type { TinyIceBase } from '@/types'
 import { PasskeyButton } from '@/components/PasskeyButton'
 import { OIDCButtons } from '@/components/OIDCButtons'
 
 const error = signal('')
 const loading = signal(false)
 
-declare global {
-  interface Window {
-    __TINYICE__: {
-      passkeysEnabled?: boolean
-      oidcProviders?: Array<{ id: string; name: string; icon: string }>
-      [key: string]: any
-    }
-  }
-}
+// A second `declare global` for window.__TINYICE__ conflicted with the one
+// in types.ts, so this file never typechecked; TinyIceBase now carries the
+// login fields.
+const pageData = (window.__TINYICE__ || {}) as Partial<TinyIceBase>
 
-const pageData = window.__TINYICE__ || {}
+// Auth redirects carry where the user was headed (/kiosk sends ?next=).
+// Only same-origin absolute paths are followed; the server applies the
+// same rule to its own redirect.
+function nextPath(): string {
+  const raw = new URLSearchParams(window.location.search).get('next') || ''
+  if (!raw.startsWith('/') || raw.startsWith('//') || raw.startsWith('/\\')) return '/admin'
+  return raw
+}
 
 export function Login() {
   const hasPasskeys = pageData.passkeysEnabled && typeof PublicKeyCredential !== 'undefined'
@@ -29,6 +32,7 @@ export function Login() {
 
     const form = e.target as HTMLFormElement
     const formData = new FormData(form)
+    formData.set('next', nextPath())
 
     try {
       const res = await fetch('/login', {
@@ -38,7 +42,7 @@ export function Login() {
       })
 
       if (res.ok || res.redirected) {
-        window.location.href = '/admin'
+        window.location.href = nextPath()
       } else {
         try {
           const data = await res.json()

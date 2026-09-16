@@ -18,9 +18,9 @@ import (
 )
 
 type streamEventInfo struct {
-	Mount        string  `json:"mount"`
-	Name         string  `json:"name"`
-	Listeners    int     `json:"listeners"`
+	Mount     string `json:"mount"`
+	Name      string `json:"name"`
+	Listeners int    `json:"listeners"`
 	// Viewers counts HLS / WHEP browser playback sessions over the
 	// last 30 s — those clients fetch segments / hold a peer
 	// connection rather than holding the long-lived listener
@@ -48,11 +48,11 @@ type streamEventInfo struct {
 
 	// Video-only metrics. Zero on audio mounts; the frontend hides
 	// the video-stats strip when Width == 0.
-	VideoWidth    int     `json:"video_width,omitempty"`
-	VideoHeight   int     `json:"video_height,omitempty"`
-	VideoFPS      float64 `json:"video_fps,omitempty"`
-	VideoGOP      float64 `json:"video_gop,omitempty"`
-	VideoKbps     int     `json:"video_kbps,omitempty"`
+	VideoWidth  int     `json:"video_width,omitempty"`
+	VideoHeight int     `json:"video_height,omitempty"`
+	VideoFPS    float64 `json:"video_fps,omitempty"`
+	VideoGOP    float64 `json:"video_gop,omitempty"`
+	VideoKbps   int     `json:"video_kbps,omitempty"`
 }
 
 type relayEventInfo struct {
@@ -63,16 +63,16 @@ type relayEventInfo struct {
 }
 
 type streamerEventInfo struct {
-	Name        string               `json:"name"`
-	Mount       string               `json:"mount"`
-	State       int                  `json:"state"`
-	CurrentSong string               `json:"song"`
-	StartTime   int64                `json:"start_time"`
+	Name        string `json:"name"`
+	Mount       string `json:"mount"`
+	State       int    `json:"state"`
+	CurrentSong string `json:"song"`
+	StartTime   int64  `json:"start_time"`
 	// Position is seconds elapsed in the current track, computed
 	// server-side. The UI can't derive it from start_time without
 	// trusting the browser clock to agree with ours.
-	Position    float64              `json:"position"`
-	Duration    float64              `json:"duration"`
+	Position float64 `json:"position"`
+	Duration float64 `json:"duration"`
 	// CurrentID is the playlist id of the track actually playing, so a
 	// UI can highlight the right row. -1 when the track came from the
 	// queue or an external song command.
@@ -197,18 +197,18 @@ func (s *Server) collectStatsPayload(user *config.User) ([]byte, error) {
 		if s.hasAccess(user, st.OutputMount) {
 			stats := st.GetStats()
 			streamers = append(streamers, streamerEventInfo{
-				Name:        stats.Name,
-				Mount:       stats.Mount,
-				State:       int(stats.State),
-				CurrentSong: stats.CurrentSong,
-				StartTime:   stats.StartTime.Unix(),
-				Position:    trackPosition(stats),
-				Duration:    stats.Duration.Seconds(),
-				CurrentID:   stats.CurrentID,
-				PlaylistPos: stats.CurrentPos,
-				PlaylistLen: stats.PlaylistLen,
-				Shuffle:     stats.Shuffle,
-				Loop:        stats.Loop,
+				Name:            stats.Name,
+				Mount:           stats.Mount,
+				State:           int(stats.State),
+				CurrentSong:     stats.CurrentSong,
+				StartTime:       stats.StartTime.Unix(),
+				Position:        trackPosition(stats),
+				Duration:        stats.Duration.Seconds(),
+				CurrentID:       stats.CurrentID,
+				PlaylistPos:     stats.CurrentPos,
+				PlaylistLen:     stats.PlaylistLen,
+				Shuffle:         stats.Shuffle,
+				Loop:            stats.Loop,
 				Queue:           st.GetQueueInfo(),
 				PlaylistVersion: stats.PlaylistVersion,
 			})
@@ -259,6 +259,25 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	bi, bo := s.Relay.GetMetrics()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{"bytes_in": bi, "bytes_out": bo})
+}
+
+// namedStreamEvent converts one entry of the stats payload into the
+// `stream` SSE frame the Preact frontend consumes. It used to be a
+// hand-listed subset, which had drifted: artist was hardcoded empty and
+// the whole transcode group (is_transcoded, source_mount, source_type,
+// source_bitrate) never made it out, so the dashboard's
+// "<src-format> -> <out-format>" display had nothing to render. Copying
+// the entry and renaming only the three fields whose names differ keeps
+// a new field on streamEventInfo from going missing again.
+func namedStreamEvent(stMap map[string]interface{}) map[string]interface{} {
+	ev := make(map[string]interface{}, len(stMap)+3)
+	for k, v := range stMap {
+		ev[k] = v
+	}
+	ev["format"] = stMap["type"]
+	ev["title"] = stMap["song"]
+	ev["artist"] = stMap["name"]
+	return ev
 }
 
 func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
@@ -338,21 +357,7 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 		if streams, ok := full["streams"].([]interface{}); ok {
 			for _, st := range streams {
 				stMap := st.(map[string]interface{})
-				streamJSON, _ := json.Marshal(map[string]interface{}{
-					"mount":        stMap["mount"],
-					"format":       stMap["type"],
-					"bitrate":      stMap["bitrate"],
-					"listeners":    stMap["listeners"],
-					"viewers":      stMap["viewers"],
-					"health":       stMap["health"],
-					"title":        stMap["song"],
-					"artist":       "",
-					"video_width":  stMap["video_width"],
-					"video_height": stMap["video_height"],
-					"video_fps":    stMap["video_fps"],
-					"video_gop":    stMap["video_gop"],
-					"video_kbps":   stMap["video_kbps"],
-				})
+				streamJSON, _ := json.Marshal(namedStreamEvent(stMap))
 				fmt.Fprintf(w, "event: stream\ndata: %s\n\n", streamJSON)
 			}
 		}
@@ -405,15 +410,19 @@ func (s *Server) handlePublicEvents(w http.ResponseWriter, r *http.Request) {
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
 	type PublicStreamInfo struct {
-		Mount       string  `json:"mount"`
-		Name        string  `json:"name"`
-		Listeners   int     `json:"listeners"`
-		Viewers     int     `json:"viewers,omitempty"`
-		Bitrate     string  `json:"bitrate"`
-		Uptime      string  `json:"uptime"`
-		Genre       string  `json:"genre"`
-		Description string  `json:"description"`
-		CurrentSong string  `json:"song"`
+		Mount       string `json:"mount"`
+		Name        string `json:"name"`
+		Listeners   int    `json:"listeners"`
+		Viewers     int    `json:"viewers,omitempty"`
+		Bitrate     string `json:"bitrate"`
+		Uptime      string `json:"uptime"`
+		Genre       string `json:"genre"`
+		Description string `json:"description"`
+		CurrentSong string `json:"song"`
+		// Live mirrors the landing page's bootstrap field: a mount with
+		// no connected source still appears here, and without this the
+		// page had no way to tell the two apart.
+		Live        bool    `json:"live"`
 		HasVideo    bool    `json:"has_video,omitempty"`
 		VideoWidth  int     `json:"video_width,omitempty"`
 		VideoHeight int     `json:"video_height,omitempty"`
@@ -444,7 +453,7 @@ func (s *Server) handlePublicEvents(w http.ResponseWriter, r *http.Request) {
 				Mount: st.MountName, Name: st.Name, Listeners: st.ListenersCount,
 				Bitrate: st.Bitrate, Uptime: st.Uptime, Genre: st.Genre,
 				Description: st.Description, CurrentSong: st.CurrentSong,
-				HasVideo: videoMounts[st.MountName],
+				Live: st.SourceIP != "", HasVideo: videoMounts[st.MountName],
 			}
 			if liveStream, ok := s.Relay.GetStream(st.MountName); ok {
 				entry.Viewers = liveStream.ViewerCount()
@@ -485,6 +494,8 @@ func (s *Server) handlePublicEvents(w http.ResponseWriter, r *http.Request) {
 				"bitrate":      entry.Bitrate,
 				"listeners":    entry.Listeners,
 				"viewers":      entry.Viewers,
+				"live":         entry.Live,
+				"has_video":    entry.HasVideo,
 				"video_width":  entry.VideoWidth,
 				"video_height": entry.VideoHeight,
 				"video_fps":    entry.VideoFPS,

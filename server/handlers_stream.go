@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -209,6 +210,10 @@ func (s *Server) handleSource(w http.ResponseWriter, r *http.Request) {
 	var src io.Reader
 	var setReadDeadline func(time.Time) error
 
+	// Let an admin kick (or a mount being disabled) terminate this
+	// connection: without it the encoder keeps streaming and recreates
+	// the mount on its next write.
+	var closeOnce sync.Once
 	if sourceHasFramedBody(r) {
 		// NOTE: deliberately no Flush here. Flushing the response
 		// before the request body has been read blocks in net/http
@@ -223,6 +228,7 @@ func (s *Server) handleSource(w http.ResponseWriter, r *http.Request) {
 		src = r.Body
 		setReadDeadline = rc.SetReadDeadline
 		defer r.Body.Close()
+		stream.SetSourceCloser(func() { closeOnce.Do(func() { _ = r.Body.Close() }) })
 	} else {
 		hj, ok := w.(http.Hijacker)
 		if !ok {
@@ -239,7 +245,9 @@ func (s *Server) handleSource(w http.ResponseWriter, r *http.Request) {
 		bufrw.Flush()
 		src = bufrw
 		setReadDeadline = conn.SetReadDeadline
+		stream.SetSourceCloser(func() { closeOnce.Do(func() { _ = conn.Close() }) })
 	}
+	defer stream.SetSourceCloser(nil)
 
 	logger.L.Infow("Source connected", "mount", mount, "ip", clientIP, "ua", r.Header.Get("User-Agent"))
 	s.dispatchWebhook("source_connect", map[string]interface{}{
@@ -289,9 +297,19 @@ func (s *Server) handleSource(w http.ResponseWriter, r *http.Request) {
 		)
 	}()
 
+	// Report a ResponseWriter that can't carry a read deadline once,
+	// rather than silently running the ingest with no idle timeout: a
+	// wrapper that doesn't implement Unwrap makes every call here fail
+	// with ErrNotSupported and there is no other symptom until a
+	// half-open source parks the goroutine forever.
+	deadlineWarned := false
 	for {
 		if setReadDeadline != nil {
-			_ = setReadDeadline(time.Now().Add(sourceReadTimeout))
+			if err := setReadDeadline(time.Now().Add(sourceReadTimeout)); err != nil && !deadlineWarned {
+				deadlineWarned = true
+				logger.L.Warnw("Source: read deadline unsupported on this connection; a silent source will not time out",
+					"mount", mount, "error", err)
+			}
 		}
 		n, err := src.Read(buf)
 		if n > 0 {
@@ -443,6 +461,13 @@ func (s *Server) handleListener(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
+	// A disabled mount refuses sources (handleSource checks the same
+	// map); it must refuse listeners too, or "disabled" only means
+	// "nobody new may broadcast".
+	if s.Config.DisabledMounts[r.URL.Path] {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
 	originalMount := r.URL.Path
 	mount := originalMount
 
@@ -469,7 +494,7 @@ func (s *Server) handleListener(w http.ResponseWriter, r *http.Request) {
 	defer recoveryTicker.Stop()
 
 	var primaryFirstSeen time.Time
-	const fallbackHysteresis = 30 * time.Second
+	icy := &icyState{}
 
 	// served flips once headers + data have gone to this client. It
 	// decides what "both primary and fallback are down" means: for a
@@ -569,18 +594,32 @@ func (s *Server) handleListener(w http.ResponseWriter, r *http.Request) {
 		// single-string copies — same race profile the rest of this file
 		// already accepts.
 		icyName := stream.Name
-		if icyName == "" { icyName = s.Config.PageTitle }
+		if icyName == "" {
+			icyName = s.Config.PageTitle
+		}
 		icyGenre := stream.Genre
 		icyURL := stream.URL
 		icyDesc := stream.Description
 		icyBR := stream.Bitrate
 		icyPub := stream.Public
 		w.Header().Set("icy-name", icyName)
-		if icyGenre != "" { w.Header().Set("icy-genre", icyGenre) }
-		if icyURL   != "" { w.Header().Set("icy-url", icyURL) }
-		if icyDesc  != "" { w.Header().Set("icy-description", icyDesc) }
-		if icyBR    != "" { w.Header().Set("icy-br", icyBR) }
-		if icyPub        { w.Header().Set("icy-pub", "1") } else { w.Header().Set("icy-pub", "0") }
+		if icyGenre != "" {
+			w.Header().Set("icy-genre", icyGenre)
+		}
+		if icyURL != "" {
+			w.Header().Set("icy-url", icyURL)
+		}
+		if icyDesc != "" {
+			w.Header().Set("icy-description", icyDesc)
+		}
+		if icyBR != "" {
+			w.Header().Set("icy-br", icyBR)
+		}
+		if icyPub {
+			w.Header().Set("icy-pub", "1")
+		} else {
+			w.Header().Set("icy-pub", "0")
+		}
 
 		if s.Config.MaxListeners > 0 && stream.ListenersCount() >= s.Config.MaxListeners {
 			http.Error(w, "Server Full", http.StatusServiceUnavailable)
@@ -599,14 +638,35 @@ func (s *Server) handleListener(w http.ResponseWriter, r *http.Request) {
 
 		served = true
 		outageSince = time.Time{}
-		if !s.serveStreamData(w, r, stream, id, originalMount, mount, recoveryTicker, metaint) {
+		if !s.serveStreamData(w, r, stream, id, originalMount, mount, recoveryTicker, metaint, icy) {
 			return
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
 }
 
-func (s *Server) serveStreamData(w http.ResponseWriter, r *http.Request, stream *relay.Stream, id, originalMount, currentMount string, recoveryTicker *time.Ticker, metaint int) bool {
+// fallbackHysteresis is how long the primary mount must be back before a
+// listener on its fallback is moved across. Shared by handleListener and
+// serveStreamData so the two agree on when a switch is due.
+const fallbackHysteresis = 30 * time.Second
+
+// icyState carries the ICY metadata cadence across re-subscribes.
+// bytesSentSinceMeta used to be a local, reset to 0 every time
+// serveStreamData was re-entered (fallback switch, post-flush recovery).
+// The client counts bytes from ITS side and expects a metadata block
+// after exactly metaint of them, so restarting our counter mid-connection
+// put the block in the wrong place and the client parsed audio as a title
+// (audible click plus garbage metadata) from then on.
+type icyState struct {
+	bytesSentSinceMeta int
+}
+
+// maxBurstSize bounds the per-mount burst an admin can configure. The burst
+// is a prefix of the mount's circular buffer, so anything beyond it is
+// meaningless; the cap keeps a mistyped value from being stored.
+const maxBurstSize = 8 * 1024 * 1024
+
+func (s *Server) serveStreamData(w http.ResponseWriter, r *http.Request, stream *relay.Stream, id, originalMount, currentMount string, recoveryTicker *time.Ticker, metaint int, icy *icyState) bool {
 	// Burst size defaults to 512 KiB but can be overridden per mount via
 	// AdvancedMounts.BurstSize (the "Advanced Mount Settings" UI field).
 	// At typical listener bitrates (128–320 kbps) this puts 10–30 seconds
@@ -615,6 +675,9 @@ func (s *Server) serveStreamData(w http.ResponseWriter, r *http.Request, stream 
 	burst := 512 * 1024
 	if adv, ok := s.Config.AdvancedMounts[currentMount]; ok && adv != nil && adv.BurstSize > 0 {
 		burst = adv.BurstSize
+		if burst > maxBurstSize {
+			burst = maxBurstSize
+		}
 	}
 	offset, signal := stream.Subscribe(id, burst)
 	defer stream.Unsubscribe(id)
@@ -700,7 +763,6 @@ func (s *Server) serveStreamData(w http.ResponseWriter, r *http.Request, stream 
 	buf := make([]byte, 64*1024)
 	flusher, _ := w.(http.Flusher)
 
-	bytesSentSinceMeta := 0
 	lastSong := ""
 
 	consecutiveSkips := 0
@@ -713,6 +775,7 @@ func (s *Server) serveStreamData(w http.ResponseWriter, r *http.Request, stream 
 	// the gap. Read once at subscribe time so we only react to bumps
 	// that happen AFTER we started reading.
 	lastFlushGen := stream.FlushGen()
+	var primaryUpSince time.Time
 
 	for {
 		select {
@@ -721,9 +784,22 @@ func (s *Server) serveStreamData(w http.ResponseWriter, r *http.Request, stream 
 		case <-r.Context().Done():
 			return false
 		case <-recoveryTicker.C:
+			// Hand control back only once the primary has been up long
+			// enough that handleListener will really switch to it.
+			// Returning on the first tick meant a re-subscribe every 10 s
+			// for the whole 30 s hysteresis window — each one re-bursts
+			// and re-aligns the listener's offset, so the audio hiccupped
+			// three times before anything changed.
 			if currentMount != originalMount {
 				if _, ok := s.Relay.GetStream(originalMount); ok {
-					return true
+					if primaryUpSince.IsZero() {
+						primaryUpSince = time.Now()
+					}
+					if time.Since(primaryUpSince) >= fallbackHysteresis {
+						return true
+					}
+				} else {
+					primaryUpSince = time.Time{}
 				}
 			}
 		case _, ok := <-signal:
@@ -737,13 +813,13 @@ func (s *Server) serveStreamData(w http.ResponseWriter, r *http.Request, stream 
 					// Reset the ICY meta-interval counter so the
 					// 16000-byte boundary stays aligned to the new
 					// post-flush byte stream.
-					bytesSentSinceMeta = 0
+					icy.bytesSentSinceMeta = 0
 				}
 			}
 			for {
 				readLimit := len(buf)
 				if metaint > 0 {
-					remaining := metaint - bytesSentSinceMeta
+					remaining := metaint - icy.bytesSentSinceMeta
 					if remaining < readLimit {
 						readLimit = remaining
 					}
@@ -786,8 +862,8 @@ func (s *Server) serveStreamData(w http.ResponseWriter, r *http.Request, stream 
 				}
 
 				if metaint > 0 {
-					bytesSentSinceMeta += n
-					if bytesSentSinceMeta >= metaint {
+					icy.bytesSentSinceMeta += n
+					if icy.bytesSentSinceMeta >= metaint {
 						currentSong := stream.GetCurrentSong()
 						meta := ""
 						if currentSong != lastSong {
@@ -795,6 +871,15 @@ func (s *Server) serveStreamData(w http.ResponseWriter, r *http.Request, stream 
 							lastSong = currentSong
 						}
 
+						// The ICY length byte counts 16-byte blocks, so
+						// the block can hold at most 255*16 = 4080 bytes.
+						// A longer title overflowed byte(l) and the client
+						// then read the tail of the title as audio —
+						// a burst of noise and a desynchronised stream.
+						const maxICYMeta = 255 * 16
+						if len(meta) > maxICYMeta {
+							meta = meta[:maxICYMeta-2] + "';"
+						}
 						l := (len(meta) + 15) / 16
 						res := make([]byte, 1+l*16)
 						res[0] = byte(l)
@@ -804,7 +889,7 @@ func (s *Server) serveStreamData(w http.ResponseWriter, r *http.Request, stream 
 						if _, err := w.Write(res); err != nil {
 							return false
 						}
-						bytesSentSinceMeta = 0
+						icy.bytesSentSinceMeta = 0
 					}
 				}
 
@@ -818,8 +903,11 @@ func (s *Server) serveStreamData(w http.ResponseWriter, r *http.Request, stream 
 	}
 }
 
-func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
-	// Build stream list for the landing page
+// visibleStreamList builds the StreamInfo array the landing and explore
+// pages are bootstrapped with. Both pages used to build it separately and
+// had drifted: explore's copy omitted has_video, so a video mount rendered
+// there as audio-only and its player opened without picture.
+func (s *Server) visibleStreamList() []map[string]interface{} {
 	allStreams := s.Relay.Snapshot()
 	videoMounts := make(map[string]bool)
 	for _, st := range allStreams {
@@ -842,12 +930,14 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 			})
 		}
 	}
-
-	pageData := s.BasePageData("")
-	pageData["streams"] = streamList
-	s.shell.Render(w, "landing", s.Config.PageTitle, pageData)
+	return streamList
 }
 
+func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
+	pageData := s.BasePageData("")
+	pageData["streams"] = s.visibleStreamList()
+	s.shell.Render(w, "landing", s.Config.PageTitle, pageData)
+}
 
 // isAlreadyMP3 returns true if the Content-Type header advertises an MP3
 // stream — an auto MP3 transcoder of an mp3 source is wasted CPU.

@@ -290,6 +290,7 @@ func resolveOpusApplication(s string) int {
 // as [bitrate_index][mpegVersion], with:
 //   - mpegVersion 0 = MPEG-2.5, 1 = reserved, 2 = MPEG-II, 3 = MPEG-I
 //   - bitrate_index 0..14 correspond to kbps values (15 is "invalid").
+//
 // -1 entries are unsupported bitrate/version combinations.
 var shineBitRates = [16][4]int64{
 	{-1, -1, -1, -1}, {8, -1, 8, 32}, {16, -1, 16, 40}, {24, -1, 24, 48},
@@ -614,7 +615,6 @@ type TranscoderStats struct {
 	Uptime          string `json:"uptime"`
 }
 
-
 // mirrorTranscodeMetadata keeps the transcoded output stream's display
 // metadata (current song, genre, URL, description, public/visible flags)
 // in sync with the input stream while the transcode runs. Without this,
@@ -664,7 +664,6 @@ func mirrorTranscodeMetadata(ctx context.Context, input, output *Stream) {
 		}
 	}
 }
-
 
 // EnsureAutoMP3Transcoders is called when a source connects on `inputMount`.
 // For each bitrate in the list it spawns a temporary mp3 transcoder named

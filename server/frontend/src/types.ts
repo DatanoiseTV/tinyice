@@ -9,6 +9,10 @@ export interface TinyIceBase {
     accentColor: string
     landingMarkdown: string
   }
+  // BasePageData injects these on every page; they were missing here, so
+  // Login.tsx had to redeclare window.__TINYICE__ with a conflicting type.
+  passkeysEnabled?: boolean
+  oidcProviders?: { id: string; name: string; icon: string }[] | null
 }
 
 export interface PlayerData extends TinyIceBase {
@@ -67,6 +71,9 @@ export interface StreamEvent {
   listeners: number
   viewers?: number
   health: number
+  /** Whether a source is currently connected. Absent on /admin/events. */
+  live?: boolean
+  has_video?: boolean
   is_transcoded?: boolean
   // For transcoded outputs: the source mount + its format/bitrate
   // so the dashboard can render "<src-format> → <out-format>".

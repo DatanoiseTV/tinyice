@@ -4,11 +4,11 @@ import "testing"
 
 func TestResolveRTMPPath(t *testing.T) {
 	cases := []struct {
-		name        string
-		app         string
-		publish     string
-		wantMount   string
-		wantPass    string
+		name      string
+		app       string
+		publish   string
+		wantMount string
+		wantPass  string
 	}{
 		// OBS default layout — Server "rtmp://host/foo", Key "pass".
 		{"obs-server-path-as-mount", "foo", "pass", "/foo", "pass"},

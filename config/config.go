@@ -99,8 +99,8 @@ type RelayConfig struct {
 }
 
 type MountSettings struct {
-	Password     string `json:"password"` // Hashed
-	BurstSize    int    `json:"burst_size"`
+	Password  string `json:"password"` // Hashed
+	BurstSize int    `json:"burst_size"`
 	// NameOverride: when set, replaces the source's Ice-Name header on
 	// metadata update. Lets ops rebrand a station server-side without
 	// touching the encoder.
@@ -176,24 +176,24 @@ type WebhookConfig struct {
 }
 
 type AutoDJConfig struct {
-	Name           string   `json:"name"`
-	Mount          string   `json:"mount"`
-	MusicDir       string   `json:"music_dir"`
-	Format         string   `json:"format"` // "mp3" or "opus"
-	Bitrate        int      `json:"bitrate"`
-	Enabled        bool     `json:"enabled"`
-	Loop           bool     `json:"loop"`
-	InjectMetadata bool     `json:"inject_metadata"`
-	Playlist       []string `json:"playlist"`
-	LastPlaylist   string   `json:"last_playlist"`
-	MPDEnabled     bool     `json:"mpd_enabled"`
-	MPDPort        string   `json:"mpd_port"`
-	MPDPassword    string   `json:"mpd_password"`
-	Visible            bool     `json:"visible"`
-	SongCommand        string   `json:"song_command"`
-	SongCommandTimeout int      `json:"song_command_timeout"`
-	OnPlayCommand        string `json:"on_play_command,omitempty"`
-	OnPlayCommandTimeout int    `json:"on_play_command_timeout,omitempty"`
+	Name                 string   `json:"name"`
+	Mount                string   `json:"mount"`
+	MusicDir             string   `json:"music_dir"`
+	Format               string   `json:"format"` // "mp3" or "opus"
+	Bitrate              int      `json:"bitrate"`
+	Enabled              bool     `json:"enabled"`
+	Loop                 bool     `json:"loop"`
+	InjectMetadata       bool     `json:"inject_metadata"`
+	Playlist             []string `json:"playlist"`
+	LastPlaylist         string   `json:"last_playlist"`
+	MPDEnabled           bool     `json:"mpd_enabled"`
+	MPDPort              string   `json:"mpd_port"`
+	MPDPassword          string   `json:"mpd_password"`
+	Visible              bool     `json:"visible"`
+	SongCommand          string   `json:"song_command"`
+	SongCommandTimeout   int      `json:"song_command_timeout"`
+	OnPlayCommand        string   `json:"on_play_command,omitempty"`
+	OnPlayCommandTimeout int      `json:"on_play_command_timeout,omitempty"`
 }
 
 type IngestConfig struct {
@@ -231,10 +231,10 @@ type Config struct {
 	// non-mp3 source mount as soon as it connects. Output mounts are
 	// named `<input>-mp3-<bitrate>` and don't get persisted to config —
 	// they live for the lifetime of the source. Empty / nil = off.
-	AutoTranscodeMP3Bitrates []int `json:"auto_transcode_mp3_bitrates,omitempty"`
-	Webhooks       []*WebhookConfig          `json:"webhooks"`
-	BannedIPs      []string                  `json:"banned_ips"`
-	WhitelistedIPs []string                  `json:"whitelisted_ips"`
+	AutoTranscodeMP3Bitrates []int            `json:"auto_transcode_mp3_bitrates,omitempty"`
+	Webhooks                 []*WebhookConfig `json:"webhooks"`
+	BannedIPs                []string         `json:"banned_ips"`
+	WhitelistedIPs           []string         `json:"whitelisted_ips"`
 	// TrustedProxies is a list of reverse-proxy peer addresses (exact IPs or
 	// CIDRs) whose X-Forwarded-For / X-Real-IP headers we will honour for
 	// scan-detection, bans and audit logging. Leave empty when the server

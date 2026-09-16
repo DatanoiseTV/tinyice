@@ -255,8 +255,11 @@ func (h *DecoderHub) runPump(inputMount string, ps *pcmStream) {
 
 	var reader io.Reader
 	if isOgg {
+		// HeadOffset, not a bare Buffer.Head read: the source goroutine
+		// writes Head under the buffer mutex, so reading the field
+		// directly here is a data race against every Broadcast.
 		aligned := input.Buffer.FindNextPageBoundaryLocked(offset)
-		if aligned < input.Buffer.Head {
+		if aligned < input.Buffer.HeadOffset() {
 			offset = aligned
 		}
 		live := NewStreamReader(input.Buffer, offset, signal, pumpCtx, subID).WithOggSync(input)
@@ -286,7 +289,7 @@ func (h *DecoderHub) runPump(inputMount string, ps *pcmStream) {
 	pcmS.Name = "PCM hub for " + inputMount
 	pcmS.ContentType = "audio/raw-s16le"
 	pcmS.IsTranscoded = true
-	pcmS.Visible = false  // don't surface to public APIs / dashboards
+	pcmS.Visible = false // don't surface to public APIs / dashboards
 	pcmS.Public = false
 	pcmS.mu.Unlock()
 	ps.stream = pcmS
@@ -309,7 +312,7 @@ func (h *DecoderHub) runPump(inputMount string, ps *pcmStream) {
 	//    keep the watchdog as a belt-and-braces safety net so that
 	//    a stuck pump always gets recycled before the 120 s
 	//    HealthMonitor kill window.
-	const chunkBytes = 8192        // 2048 stereo s16 samples = ~21ms @ 48kHz / ~23ms @ 44.1kHz
+	const chunkBytes = 8192 // 2048 stereo s16 samples = ~21ms @ 48kHz / ~23ms @ 44.1kHz
 	const pumpStallTimeout = 30 * time.Second
 	var lastWrite atomic.Int64
 	lastWrite.Store(time.Now().UnixNano())
@@ -348,4 +351,3 @@ func (h *DecoderHub) runPump(inputMount string, ps *pcmStream) {
 		lastWrite.Store(time.Now().UnixNano())
 	}
 }
-

@@ -139,7 +139,7 @@ var builtinPresets = []WebhookPreset{
 		Events:      []string{"now_playing"},
 		Method:      "GET",
 		ContentType: "application/x-www-form-urlencoded",
-		Body: `partnerId=<PARTNER_ID>&partnerKey=<PARTNER_KEY>&id=<STATION_ID>&title={{urlencode .Title}}&artist={{urlencode .Artist}}`,
+		Body:        `partnerId=<PARTNER_ID>&partnerKey=<PARTNER_KEY>&id=<STATION_ID>&title={{urlencode .Title}}&artist={{urlencode .Artist}}`,
 	},
 	{
 		ID:          "webhook_site",

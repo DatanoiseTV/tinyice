@@ -220,6 +220,10 @@ func (s *Server) apiCreateStream(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Mount    string `json:"mount"`
 		Password string `json:"password"`
+		// The create form has always had a burst-size field; the handler
+		// never read it, so the value was collected and thrown away and
+		// every mount ran on the 512 KiB default.
+		BurstSize int `json:"burst_size"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		jsonError(w, "Invalid request body", http.StatusBadRequest)
@@ -227,6 +231,10 @@ func (s *Server) apiCreateStream(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.Mount == "" || body.Password == "" {
 		jsonError(w, "Mount and password are required", http.StatusBadRequest)
+		return
+	}
+	if body.BurstSize < 0 || body.BurstSize > maxBurstSize {
+		jsonError(w, fmt.Sprintf("burst_size must be between 0 and %d", maxBurstSize), http.StatusBadRequest)
 		return
 	}
 	if body.Mount[0] != '/' {
@@ -251,6 +259,16 @@ func (s *Server) apiCreateStream(w http.ResponseWriter, r *http.Request) {
 	} else {
 		s.Config.LockMaps()
 		user.Mounts[body.Mount] = hashed
+		s.Config.UnlockMaps()
+	}
+	if body.BurstSize > 0 {
+		s.Config.LockMaps()
+		adv, ok := s.Config.AdvancedMounts[body.Mount]
+		if !ok || adv == nil {
+			adv = &config.MountSettings{}
+			s.Config.AdvancedMounts[body.Mount] = adv
+		}
+		adv.BurstSize = body.BurstSize
 		s.Config.UnlockMaps()
 	}
 	s.Config.SaveConfig()
@@ -337,10 +355,10 @@ func (s *Server) apiUpdateStream(w http.ResponseWriter, r *http.Request) {
 			s.Config.DisabledMounts[body.Mount] = true
 			s.Config.UnlockMaps()
 			// Kick the live source if it's currently connected so the new
-			// disabled state takes effect immediately.
-			if st, ok := s.Relay.GetStream(body.Mount); ok {
-				st.DisconnectListeners()
-			}
+			// disabled state takes effect immediately. DisconnectListeners
+			// alone left the encoder streaming — it just recreated the
+			// mount and carried on, so "disabled" disabled nothing.
+			s.Relay.RemoveStream(body.Mount)
 		}
 	}
 
@@ -455,32 +473,32 @@ func (s *Server) apiGetAutoDJ(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type autoDJInfo struct {
-		Name           string               `json:"name"`
-		Mount          string               `json:"mount"`
-		State          int                  `json:"state"`
-		CurrentSong    string               `json:"current_song"`
-		StartTime      int64                `json:"start_time"`
-		Position       float64              `json:"position"`
-		Duration       float64              `json:"duration"`
-		CurrentID      int                  `json:"current_id"`
-		PlaylistPos    int                  `json:"playlist_pos"`
-		PlaylistLen    int                  `json:"playlist_len"`
-		Shuffle        bool                 `json:"shuffle"`
-		Loop           bool                 `json:"loop"`
-		InjectMetadata bool                 `json:"inject_metadata"`
-		Visible        bool                 `json:"visible"`
-		MusicDir       string               `json:"music_dir"`
-		Format         string               `json:"format"`
-		Bitrate        int                  `json:"bitrate"`
-		Enabled        bool                 `json:"enabled"`
-		MPDEnabled     bool                 `json:"mpd_enabled"`
-		MPDPort        string               `json:"mpd_port"`
-		LastPlaylist          string               `json:"last_playlist"`
-		SongCommand           string               `json:"song_command"`
-		SongCommandTimeout    int                   `json:"song_command_timeout"`
-		OnPlayCommand         string               `json:"on_play_command"`
-		OnPlayCommandTimeout  int                   `json:"on_play_command_timeout"`
-		Queue                 []relay.PlaylistItem  `json:"queue"`
+		Name                 string               `json:"name"`
+		Mount                string               `json:"mount"`
+		State                int                  `json:"state"`
+		CurrentSong          string               `json:"current_song"`
+		StartTime            int64                `json:"start_time"`
+		Position             float64              `json:"position"`
+		Duration             float64              `json:"duration"`
+		CurrentID            int                  `json:"current_id"`
+		PlaylistPos          int                  `json:"playlist_pos"`
+		PlaylistLen          int                  `json:"playlist_len"`
+		Shuffle              bool                 `json:"shuffle"`
+		Loop                 bool                 `json:"loop"`
+		InjectMetadata       bool                 `json:"inject_metadata"`
+		Visible              bool                 `json:"visible"`
+		MusicDir             string               `json:"music_dir"`
+		Format               string               `json:"format"`
+		Bitrate              int                  `json:"bitrate"`
+		Enabled              bool                 `json:"enabled"`
+		MPDEnabled           bool                 `json:"mpd_enabled"`
+		MPDPort              string               `json:"mpd_port"`
+		LastPlaylist         string               `json:"last_playlist"`
+		SongCommand          string               `json:"song_command"`
+		SongCommandTimeout   int                  `json:"song_command_timeout"`
+		OnPlayCommand        string               `json:"on_play_command"`
+		OnPlayCommandTimeout int                  `json:"on_play_command_timeout"`
+		Queue                []relay.PlaylistItem `json:"queue"`
 	}
 
 	var result []autoDJInfo
@@ -497,22 +515,22 @@ func (s *Server) apiGetAutoDJ(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		info := autoDJInfo{
-			Name:           adj.Name,
-			Mount:          adj.Mount,
-			Format:         adj.Format,
-			Bitrate:        adj.Bitrate,
-			Enabled:        adj.Enabled,
-			MusicDir:       adj.MusicDir,
-			MPDEnabled:     adj.MPDEnabled,
-			MPDPort:        adj.MPDPort,
-			LastPlaylist:       adj.LastPlaylist,
+			Name:                 adj.Name,
+			Mount:                adj.Mount,
+			Format:               adj.Format,
+			Bitrate:              adj.Bitrate,
+			Enabled:              adj.Enabled,
+			MusicDir:             adj.MusicDir,
+			MPDEnabled:           adj.MPDEnabled,
+			MPDPort:              adj.MPDPort,
+			LastPlaylist:         adj.LastPlaylist,
 			SongCommand:          adj.SongCommand,
 			SongCommandTimeout:   adj.SongCommandTimeout,
 			OnPlayCommand:        adj.OnPlayCommand,
 			OnPlayCommandTimeout: adj.OnPlayCommandTimeout,
 			Loop:                 adj.Loop,
-			InjectMetadata:     adj.InjectMetadata,
-			Visible:            adj.Visible,
+			InjectMetadata:       adj.InjectMetadata,
+			Visible:              adj.Visible,
 		}
 		if st, ok := streamerMap[adj.Mount]; ok {
 			stats := st.GetStats()
@@ -562,16 +580,16 @@ func (s *Server) apiCreateAutoDJ(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var body struct {
-		Name           string `json:"name"`
-		Mount          string `json:"mount"`
-		MusicDir       string `json:"music_dir"`
-		Format         string `json:"format"`
-		Bitrate        int    `json:"bitrate"`
-		Loop           bool   `json:"loop"`
-		InjectMetadata bool   `json:"inject_metadata"`
-		MPDEnabled     bool   `json:"mpd_enabled"`
-		MPDPort        string `json:"mpd_port"`
-		MPDPassword    string `json:"mpd_password"`
+		Name                 string `json:"name"`
+		Mount                string `json:"mount"`
+		MusicDir             string `json:"music_dir"`
+		Format               string `json:"format"`
+		Bitrate              int    `json:"bitrate"`
+		Loop                 bool   `json:"loop"`
+		InjectMetadata       bool   `json:"inject_metadata"`
+		MPDEnabled           bool   `json:"mpd_enabled"`
+		MPDPort              string `json:"mpd_port"`
+		MPDPassword          string `json:"mpd_password"`
 		Visible              bool   `json:"visible"`
 		SongCommand          string `json:"song_command"`
 		SongCommandTimeout   int    `json:"song_command_timeout"`
@@ -606,16 +624,16 @@ func (s *Server) apiCreateAutoDJ(w http.ResponseWriter, r *http.Request) {
 	}
 
 	adj := &config.AutoDJConfig{
-		Name:           body.Name,
-		Mount:          body.Mount,
-		MusicDir:       absMusicDir,
-		Format:         body.Format,
-		Bitrate:        body.Bitrate,
-		Enabled:        true,
-		Loop:           body.Loop,
-		InjectMetadata: body.InjectMetadata,
-		MPDEnabled:     body.MPDEnabled,
-		MPDPort:        body.MPDPort,
+		Name:                 body.Name,
+		Mount:                body.Mount,
+		MusicDir:             absMusicDir,
+		Format:               body.Format,
+		Bitrate:              body.Bitrate,
+		Enabled:              true,
+		Loop:                 body.Loop,
+		InjectMetadata:       body.InjectMetadata,
+		MPDEnabled:           body.MPDEnabled,
+		MPDPort:              body.MPDPort,
 		MPDPassword:          body.MPDPassword,
 		Visible:              body.Visible,
 		SongCommand:          body.SongCommand,
@@ -680,21 +698,25 @@ func (s *Server) apiUpdateAutoDJ(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var body struct {
-		Name               string `json:"name"`
-		Mount              string `json:"mount"`
-		MusicDir           string `json:"music_dir"`
-		Format             string `json:"format"`
-		Bitrate            int    `json:"bitrate"`
-		Loop               bool   `json:"loop"`
-		InjectMetadata     bool   `json:"inject_metadata"`
-		MPDEnabled         bool   `json:"mpd_enabled"`
-		MPDPort            string `json:"mpd_port"`
-		MPDPassword        string `json:"mpd_password"`
-		Visible              bool   `json:"visible"`
-		SongCommand          string `json:"song_command"`
-		SongCommandTimeout   int    `json:"song_command_timeout"`
-		OnPlayCommand        string `json:"on_play_command"`
-		OnPlayCommandTimeout int    `json:"on_play_command_timeout"`
+		Name     string `json:"name"`
+		Mount    string `json:"mount"`
+		MusicDir string `json:"music_dir"`
+		Format   string `json:"format"`
+		Bitrate  int    `json:"bitrate"`
+		// Pointers where a missing field must mean "leave it alone".
+		// The admin edit form doesn't submit these, and decoding an
+		// absent bool as false silently switched off the AutoDJ's MPD
+		// server and cleared its visibility on every edit.
+		Loop                 *bool   `json:"loop"`
+		InjectMetadata       *bool   `json:"inject_metadata"`
+		MPDEnabled           *bool   `json:"mpd_enabled"`
+		MPDPort              *string `json:"mpd_port"`
+		MPDPassword          string  `json:"mpd_password"`
+		Visible              *bool   `json:"visible"`
+		SongCommand          string  `json:"song_command"`
+		SongCommandTimeout   int     `json:"song_command_timeout"`
+		OnPlayCommand        string  `json:"on_play_command"`
+		OnPlayCommandTimeout int     `json:"on_play_command_timeout"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		jsonError(w, "Invalid request body", http.StatusBadRequest)
@@ -730,6 +752,10 @@ func (s *Server) apiUpdateAutoDJ(w http.ResponseWriter, r *http.Request) {
 		absMusicDir, _ = filepath.Abs(body.MusicDir)
 	}
 
+	// Snapshot the previous configuration so a failed restart can be
+	// rolled back rather than leaving no AutoDJ at all.
+	prev := *target
+
 	// Stop the old instance before mutating config.
 	s.StreamerM.DeleteStreamer(originalMount)
 
@@ -744,21 +770,33 @@ func (s *Server) apiUpdateAutoDJ(w http.ResponseWriter, r *http.Request) {
 	if body.Bitrate != 0 {
 		target.Bitrate = body.Bitrate
 	}
-	target.Loop = body.Loop
-	target.InjectMetadata = body.InjectMetadata
-	target.MPDEnabled = body.MPDEnabled
-	target.MPDPort = body.MPDPort
+	if body.Loop != nil {
+		target.Loop = *body.Loop
+	}
+	if body.InjectMetadata != nil {
+		target.InjectMetadata = *body.InjectMetadata
+	}
+	if body.MPDEnabled != nil {
+		target.MPDEnabled = *body.MPDEnabled
+	}
+	if body.MPDPort != nil {
+		target.MPDPort = *body.MPDPort
+	}
 	if body.MPDPassword != "" {
 		target.MPDPassword = body.MPDPassword
 	}
-	target.Visible = body.Visible
+	if body.Visible != nil {
+		target.Visible = *body.Visible
+	}
 	target.SongCommand = body.SongCommand
 	target.SongCommandTimeout = body.SongCommandTimeout
 	target.OnPlayCommand = body.OnPlayCommand
 	target.OnPlayCommandTimeout = body.OnPlayCommandTimeout
 
-	s.Config.SaveConfig()
-
+	// Start BEFORE persisting: the old streamer is already torn down, so
+	// if the new configuration can't start (a taken MPD port, a bad
+	// music dir) we must be able to put the previous one back. Saving
+	// first left the config describing an AutoDJ that doesn't exist.
 	streamer, err := s.StreamerM.StartStreamer(
 		target.Name, target.Mount, target.MusicDir, target.Loop, target.Format, target.Bitrate,
 		target.InjectMetadata, target.Playlist, target.MPDEnabled, target.MPDPort, target.MPDPassword,
@@ -766,9 +804,24 @@ func (s *Server) apiUpdateAutoDJ(w http.ResponseWriter, r *http.Request) {
 		target.OnPlayCommand, target.OnPlayCommandTimeout,
 	)
 	if err != nil {
+		*target = prev
+		if restored, rerr := s.StreamerM.StartStreamer(
+			target.Name, target.Mount, target.MusicDir, target.Loop, target.Format, target.Bitrate,
+			target.InjectMetadata, target.Playlist, target.MPDEnabled, target.MPDPort, target.MPDPassword,
+			target.Visible, target.LastPlaylist, target.SongCommand, target.SongCommandTimeout,
+			target.OnPlayCommand, target.OnPlayCommandTimeout,
+		); rerr == nil {
+			restored.Play()
+			logger.L.Warnw("AutoDJ update failed; previous configuration restored",
+				"mount", target.Mount, "error", err)
+		} else {
+			logger.L.Errorw("AutoDJ update failed and the previous configuration could not be restored",
+				"mount", target.Mount, "error", err, "restore_error", rerr)
+		}
 		jsonError(w, fmt.Sprintf("Failed to restart AutoDJ: %v", err), http.StatusInternalServerError)
 		return
 	}
+	s.Config.SaveConfig()
 	if target.MusicDir != "" {
 		streamer.ScanMusicDir()
 	}
@@ -893,9 +946,9 @@ func (s *Server) apiAutoDJPrev(w http.ResponseWriter, r *http.Request) {
 	jsonResponse(w, map[string]string{"status": "rewound"})
 }
 
-// apiAutoDJVolume sets playback volume for an AutoDJ mount. Accepts
-// either {"volume": 0.8} as a float in [0,1] or {"volume": 80} as a
-// percentage.
+// apiAutoDJVolume sets playback volume for an AutoDJ mount. The body is
+// {"volume": v, "unit": "percent"|"fraction"}; with no unit the value is
+// guessed by range (> 1 means percent) for legacy callers.
 func (s *Server) apiAutoDJVolume(w http.ResponseWriter, r *http.Request) {
 	if !s.isCSRFSafe(r) {
 		jsonError(w, "Forbidden", http.StatusForbidden)
@@ -912,14 +965,28 @@ func (s *Server) apiAutoDJVolume(w http.ResponseWriter, r *http.Request) {
 	}
 	var body struct {
 		Volume float64 `json:"volume"`
+		// Unit disambiguates the range. Without it the endpoint guessed
+		// "> 1 means percent", which makes every value in 0..1 ambiguous:
+		// the Studio's slider at 1% sent 1, the guess read that as the
+		// fraction 1.0, and the knob jumped to full volume.
+		Unit string `json:"unit"` // "percent" | "fraction"
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		jsonError(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
 	v := body.Volume
-	if v > 1.0 { // accept either 0..1 or 0..100
+	switch strings.ToLower(body.Unit) {
+	case "percent":
 		v = v / 100.0
+	case "fraction":
+		// already 0..1
+	default:
+		// Legacy callers sent either range with no unit; keep guessing
+		// for them, but the UI now says which it means.
+		if v > 1.0 {
+			v = v / 100.0
+		}
 	}
 	streamer.SetVolume(v)
 	jsonResponse(w, map[string]interface{}{"status": "ok", "volume": streamer.GetVolume()})

@@ -57,7 +57,7 @@ function actionBadgeClass(action: string): string {
 }
 
 const AUDIT_LIMIT = 25
-const AUDIT_CATEGORIES = ['', 'auth', 'streams', 'autodj', 'relays', 'transcoders', 'users', 'security', 'settings']
+const AUDIT_CATEGORIES = ['', 'auth', 'streams', 'autodj', 'relays', 'transcoders', 'webhooks', 'users', 'security', 'settings']
 const CATEGORY_LABELS: Record<string, string> = {
   '': 'All',
   auth: 'Auth',
@@ -65,6 +65,7 @@ const CATEGORY_LABELS: Record<string, string> = {
   autodj: 'AutoDJ',
   relays: 'Relays',
   transcoders: 'Transcoders',
+  webhooks: 'Webhooks',
   users: 'Users',
   security: 'Security',
   settings: 'Settings',

@@ -1,6 +1,7 @@
 package relay
 
 import (
+	"strings"
 	"time"
 
 	"github.com/DatanoiseTV/tinyice/logger"
@@ -338,29 +339,81 @@ func (hm *HistoryManager) RecordAudit(user, action, resourceType, resourceID, de
 	})
 }
 
-// GetAuditLog retrieves paginated audit log entries, optionally filtered by category.
+// AuditCategoryRule describes which audit actions belong to one UI filter
+// category. Prefixes exist so that a newly added action (mount_paused,
+// relay_reset, ...) lands in its category automatically: the previous
+// filter was a hand-written list of exact action names that had gone
+// thirteen actions stale, so selecting "Streams" hid every mount_updated,
+// mount_enabled, mount_disabled and kick that had ever been recorded.
+type AuditCategoryRule struct {
+	Exact    []string
+	Prefixes []string
+}
+
+// AuditCategoryRules maps a filter category to the actions it covers.
+// Every action passed to Server.Audit must be covered by exactly one
+// category; relay/history_test.go pins that.
+var AuditCategoryRules = map[string]AuditCategoryRule{
+	"auth": {Exact: []string{"login", "logout", "login_failed",
+		"setup_complete", "passkey_registered"}, Prefixes: []string{"token_"}},
+	"streams":     {Exact: []string{"stream_kicked", "listeners_kicked_all"}, Prefixes: []string{"mount_"}},
+	"autodj":      {Prefixes: []string{"autodj_"}},
+	"relays":      {Prefixes: []string{"relay_"}},
+	"transcoders": {Prefixes: []string{"transcoder_"}},
+	"webhooks":    {Prefixes: []string{"webhook_"}},
+	"users":       {Prefixes: []string{"user_", "pending_"}},
+	"security":    {Prefixes: []string{"ip_"}},
+	"settings":    {Prefixes: []string{"settings_", "branding_", "logo_"}},
+}
+
+// AuditCategoryOf returns the filter category an action belongs to, or ""
+// if no category covers it.
+func AuditCategoryOf(action string) string {
+	for name, rule := range AuditCategoryRules {
+		for _, a := range rule.Exact {
+			if a == action {
+				return name
+			}
+		}
+		for _, p := range rule.Prefixes {
+			if strings.HasPrefix(action, p) {
+				return name
+			}
+		}
+	}
+	return ""
+}
+
+// GetAuditLog retrieves paginated audit log entries, optionally filtered by
+// category. An unrecognised category returns nothing rather than silently
+// falling through to "everything".
 func (hm *HistoryManager) GetAuditLog(page, limit int, category string) ([]AuditEntry, int64) {
 	var entries []AuditEntry
 	var total int64
 
 	q := hm.db.Model(&AuditEntry{})
 	if category != "" {
-		prefixMap := map[string][]string{
-			"auth":        {"login", "logout", "login_failed", "token_created", "token_revoked"},
-			"streams":     {"mount_created", "mount_deleted"},
-			"autodj":      {"autodj_created", "autodj_deleted"},
-			"relays":      {"relay_created", "relay_deleted"},
-			"transcoders": {"transcoder_created", "transcoder_deleted"},
-			"users":       {"user_created", "user_updated", "user_deleted", "pending_approved", "pending_denied"},
-			"security":    {"ip_banned", "ip_unbanned", "ip_whitelisted", "ip_unwhitelisted"},
-			"settings":    {"settings_updated", "branding_updated", "logo_uploaded"},
+		rule, ok := AuditCategoryRules[category]
+		if !ok {
+			return []AuditEntry{}, 0
 		}
-		if actions, ok := prefixMap[category]; ok {
-			q = q.Where("action IN ?", actions)
+		conds := make([]string, 0, 1+len(rule.Prefixes))
+		args := make([]interface{}, 0, 1+len(rule.Prefixes))
+		if len(rule.Exact) > 0 {
+			conds = append(conds, "action IN ?")
+			args = append(args, rule.Exact)
 		}
+		for _, p := range rule.Prefixes {
+			conds = append(conds, "action LIKE ?")
+			args = append(args, p+"%")
+		}
+		q = q.Where(strings.Join(conds, " OR "), args...)
 	}
 
-	q.Count(&total)
-	q.Order("timestamp DESC").Offset((page - 1) * limit).Limit(limit).Find(&entries)
+	// Count and Find must not share a statement: GORM carries the built
+	// clauses (including the count selector) forward on a reused *gorm.DB.
+	q.Session(&gorm.Session{}).Count(&total)
+	q.Session(&gorm.Session{}).Order("timestamp DESC").
+		Offset((page - 1) * limit).Limit(limit).Find(&entries)
 	return entries, total
 }

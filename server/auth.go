@@ -426,9 +426,25 @@ func (s *Server) isCSRFSafe(r *http.Request) bool {
 		return true
 	}
 
+	// A Bearer token lives in the Authorization header, which a
+	// cross-origin form or image cannot set without a CORS preflight we
+	// never answer. Token clients therefore need no CSRF token.
+	if strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ") {
+		return true
+	}
+
+	// No session cookie, or one we don't recognise, used to count as
+	// safe on the reasoning that the request could not be authenticated
+	// anyway. That is false: checkAuth also accepts HTTP Basic, and
+	// /admin/metadata answers with `WWW-Authenticate: Basic realm=
+	// "TinyIce"`, so a browser that has ever authenticated there
+	// re-attaches those credentials to every same-origin request —
+	// including one a third-party page triggers. Such a request carried
+	// no CSRF token and was waved through. Refuse instead; a request
+	// with no credentials at all merely turns 401 into 403.
 	cookie, err := r.Cookie("sid")
 	if err != nil {
-		return true
+		return false
 	}
 
 	s.sessionsMu.RLock()
@@ -436,7 +452,7 @@ func (s *Server) isCSRFSafe(r *http.Request) bool {
 	s.sessionsMu.RUnlock()
 
 	if !ok {
-		return true
+		return false
 	}
 
 	providedToken := r.FormValue("csrf")
@@ -627,7 +643,14 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		s.recordAuthSuccess(host)
 		s.createSession(w, r, user)
 		s.Audit(r, "login", "auth", u, "")
-		http.Redirect(w, r, "/admin", http.StatusSeeOther)
+		// Honour the ?next= that the auth redirects already emit (/kiosk
+		// sends one); previously every login landed on /admin and the
+		// user had to navigate back by hand.
+		next := r.FormValue("next")
+		if next == "" {
+			next = r.URL.Query().Get("next")
+		}
+		http.Redirect(w, r, safeNextPath(next), http.StatusSeeOther)
 		return
 	}
 

@@ -50,6 +50,7 @@ type Stream struct {
 	// Timing and source information
 	Started          time.Time // When the stream was created
 	SourceIP         string    // IP address of the source client
+	sourceCloser     func()    // terminates the source connection (see KickSource)
 	LastDataReceived time.Time // Last time data was received from source
 
 	// Stream state and visibility
@@ -71,8 +72,8 @@ type Stream struct {
 
 	// Ogg/Opus specific state for proper synchronization
 	// These fields enable new listeners to start at proper page boundaries
-	OggHead         []byte  // Store Ogg headers for Opus/Ogg streams
-	OggHeaderOffset int64   // Absolute buffer offset where headers end
+	OggHead         []byte // Store Ogg headers for Opus/Ogg streams
+	OggHeaderOffset int64  // Absolute buffer offset where headers end
 	// VideoHeaders is the Annex-B SPS + PPS bytes for an H.264 video
 	// stream. Listeners that tune in mid-GOP need these injected before
 	// the first IDR — otherwise they get "non-existing PPS referenced"
@@ -94,9 +95,9 @@ type Stream struct {
 	// only crash on them. Subscribe() bumps a new listener's start
 	// offset up to this value.
 	MinListenerOffset int64
-	LastPageOffset  int64   // Absolute offset of the last valid Ogg page start
-	PageOffsets     []int64 // Circular list of last ~100 page starts
-	PageIndex       int     // Index for managing PageOffsets circular list
+	LastPageOffset    int64   // Absolute offset of the last valid Ogg page start
+	PageOffsets       []int64 // Circular list of last ~100 page starts
+	PageIndex         int     // Index for managing PageOffsets circular list
 
 	// FlushGen is incremented every time something invalidates the
 	// in-buffer audio for currently-subscribed listeners (e.g. a
@@ -107,11 +108,11 @@ type Stream struct {
 	flushGen atomic.Uint64
 
 	// Core streaming infrastructure
-	Buffer    *CircularBuffer          // Audio data buffer (typically 2MB)
+	Buffer            *CircularBuffer          // Audio data buffer (typically 2MB)
 	listeners         map[string]chan struct{} // Signal channels for connected listeners
 	internalListeners map[string]struct{}      // subset of listener ids that should NOT count toward ListenersCount (e.g. transcoders subscribing to their input)
-	mu     sync.RWMutex             // Mutex protecting all fields
-	closed int32                    // Atomic flag: 1 = stream closed
+	mu                sync.RWMutex             // Mutex protecting all fields
+	closed            int32                    // Atomic flag: 1 = stream closed
 
 	// Video metrics sliding window, protected by mu. Refreshed by
 	// RecordVideoSample on every frame and exposed via
@@ -193,6 +194,45 @@ func (s *Stream) TryClaimSource(ip string) bool {
 		return false
 	}
 	s.SourceIP = ip
+	return true
+}
+
+// SetSourceCloser registers how to terminate the current source's
+// connection. RemoveStream and the admin "kick source" action only ever
+// dropped the Stream object and the listeners: the encoder's connection
+// stayed open, kept reading, and a fresh Stream was created under it on
+// the next write, so a kicked source carried on broadcasting. The ingest
+// handler registers a closer when it takes ownership and clears it on
+// exit.
+func (s *Stream) SetSourceCloser(fn func()) {
+	s.mu.Lock()
+	s.sourceCloser = fn
+	s.mu.Unlock()
+}
+
+// KickSource terminates the source connection if one is registered.
+// Safe to call with no source.
+func (s *Stream) KickSource() {
+	s.mu.Lock()
+	fn := s.sourceCloser
+	s.sourceCloser = nil
+	s.mu.Unlock()
+	if fn != nil {
+		fn()
+	}
+}
+
+// ClaimSourceIfFree claims the mount for label unless a DIFFERENT source
+// already holds it. Returns false when someone else owns the mount, so an
+// in-process producer (the AutoDJ) can decline to write rather than
+// interleaving its bytes with a live encoder's into the same buffer.
+func (s *Stream) ClaimSourceIfFree(label string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.SourceIP != "" && s.SourceIP != label {
+		return false
+	}
+	s.SourceIP = label
 	return true
 }
 
@@ -662,33 +702,31 @@ func (s *Stream) Broadcast(data []byte, relay *Relay) {
 	s.Buffer.Write(data)
 	s.mu.Unlock()
 
-	// 2. Signal phase — copy the listener channel slice under
-	//    RLock then drop the lock before sending. Subscribe /
-	//    Unsubscribe holds the write lock to mutate the map; an
-	//    Unsubscribe racing with a Broadcast can leave us holding a
-	//    reference to a channel that has been closed in the meantime.
-	//    A select-default does NOT protect against that — sending on
-	//    a closed channel panics regardless of select. The recover
-	//    inside the per-channel anon-func contains the panic to one
-	//    listener so a subscriber tearing down at the wrong moment
-	//    can't crash the source / encoder goroutine that called us.
+	// 2. Signal phase — under RLock, which is what makes it safe.
+	//
+	//    This used to snapshot the channels and send after dropping the
+	//    lock, with a recover() per send to contain the panic when
+	//    Close/Unsubscribe had closed a channel in between. That worked
+	//    in production but is a genuine data race (close vs send), which
+	//    the race detector reports on every run, and "recover from a
+	//    panic we know we are causing" is not a synchronisation strategy.
+	//
+	//    Holding RLock instead excludes Close and Unsubscribe (both take
+	//    the write lock) for the duration. The cost is bounded: every
+	//    send is non-blocking, so this is a map walk and at most one
+	//    channel write per listener — no I/O under the lock. RLock is
+	//    shared, so concurrent Broadcasts on other streams and readers
+	//    are unaffected.
 	s.mu.RLock()
-	chans := make([]chan struct{}, 0, len(s.listeners))
 	for _, ch := range s.listeners {
-		chans = append(chans, ch)
+		select {
+		case ch <- struct{}{}:
+			// signalled
+		default:
+			// already pending; slow listener, skip
+		}
 	}
 	s.mu.RUnlock()
-	for _, ch := range chans {
-		func(ch chan struct{}) {
-			defer func() { _ = recover() }()
-			select {
-			case ch <- struct{}{}:
-				// signalled
-			default:
-				// already pending; slow listener, skip
-			}
-		}(ch)
-	}
 }
 
 // Subscribe adds a listener and returns its starting offset and a signal channel.
@@ -732,6 +770,7 @@ func (s *Stream) Broadcast(data []byte, relay *Relay) {
 //
 //	offset, signal := stream.Subscribe("listener-123", 32*1024)
 //	reader := NewStreamReader(stream.Buffer, offset, signal, ctx, "listener-123")
+//
 // SubscribeInternal is like Subscribe but flags the listener as internal
 // (e.g. a transcoder reading the input mount). Internal listeners are
 // excluded from ListenersCount and from the listener-count history
@@ -739,7 +778,9 @@ func (s *Stream) Broadcast(data []byte, relay *Relay) {
 func (s *Stream) SubscribeInternal(id string, burstSize int) (int64, chan struct{}) {
 	offset, sig := s.Subscribe(id, burstSize)
 	s.mu.Lock()
-	if s.internalListeners == nil { s.internalListeners = make(map[string]struct{}) }
+	if s.internalListeners == nil {
+		s.internalListeners = make(map[string]struct{})
+	}
 	s.internalListeners[id] = struct{}{}
 	s.mu.Unlock()
 	return offset, sig
@@ -749,8 +790,23 @@ func (s *Stream) Subscribe(id string, burstSize int) (int64, chan struct{}) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	// Read the head once, under the buffer's own mutex. Every branch
+	// below used to read the field directly — a data race against the
+	// source goroutine's Buffer.Write, and re-read often enough that two
+	// branches of one call could see different heads.
+	head := s.Buffer.HeadOffset()
+
 	// Create buffered signal channel for this listener
 	ch := make(chan struct{}, 1)
+	if atomic.LoadInt32(&s.closed) == 1 {
+		// The stream is already closed: Close() has walked the listener
+		// map and will never do so again, so registering here would leave
+		// a subscriber parked on a channel nobody ever closes or signals.
+		// Hand back a closed channel so the reader sees EOF immediately,
+		// which is what every caller does with a closed signal.
+		close(ch)
+		return head, ch
+	}
 	s.listeners[id] = ch
 
 	// Freshness gate: if the producer has been silent for >2s, the bytes
@@ -762,20 +818,30 @@ func (s *Stream) Subscribe(id string, burstSize int) (int64, chan struct{}) {
 	// normal between-frame jitter but small enough that pauses between
 	// songs / brief flaps don't replay.
 	if !s.LastDataReceived.IsZero() && time.Since(s.LastDataReceived) > 2*time.Second {
-		return s.Buffer.Head, ch
+		return head, ch
 	}
 
 	// Start at current head minus burst size for instant playback
 	// This gives the listener immediate audio data instead of waiting for new data
-	start := s.Buffer.Head - int64(burstSize)
+	start := head - int64(burstSize)
 	if start < 0 {
 		start = 0
+	}
+
+	// A caller asking for no burst wants the LIVE EDGE (WebRTC and WHEP
+	// viewers do this; they run their own page sync from there). The
+	// alignment below walks BACKWARDS to the oldest tracked page when it
+	// can't find one at or after `start`, which for start == Head is
+	// always — so a burst-free subscriber was handed the oldest audio in
+	// the buffer and stayed seconds behind live for the whole session.
+	if burstSize <= 0 {
+		return head, ch
 	}
 
 	// For Ogg/Opus, align to the oldest known page boundary within the valid buffer range
 	// This is crucial for proper Opus decoding - listeners MUST start at page boundaries
 	if s.IsOggStream {
-		validStart := s.Buffer.Head - s.Buffer.Size
+		validStart := head - s.Buffer.Size
 		if validStart < 0 {
 			validStart = 0
 		}
@@ -821,7 +887,7 @@ func (s *Stream) Subscribe(id string, burstSize int) (int64, chan struct{}) {
 			start = s.LastPageOffset
 		default:
 			// Nothing tracked yet — fall back to burst-based offset.
-			start = s.Buffer.Head - int64(burstSize)
+			start = head - int64(burstSize)
 			if start < validStart {
 				start = validStart
 			}
@@ -832,8 +898,8 @@ func (s *Stream) Subscribe(id string, burstSize int) (int64, chan struct{}) {
 	}
 
 	// Ensure we don't go back further than the buffer allows
-	if s.Buffer.Head-start > s.Buffer.Size {
-		start = s.Buffer.Head - s.Buffer.Size
+	if head-start > s.Buffer.Size {
+		start = head - s.Buffer.Size
 	}
 
 	return start, ch
@@ -962,4 +1028,14 @@ func (s *Stream) GetStartedTime() time.Time {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.Started
+}
+
+// SetContentTypeForTest sets ContentType under the stream mutex. Tests
+// need this because ContentType is written by ingest paths that a unit
+// test doesn't run; production code sets it inline while already holding
+// the lock.
+func (s *Stream) SetContentTypeForTest(ct string) {
+	s.mu.Lock()
+	s.ContentType = ct
+	s.mu.Unlock()
 }

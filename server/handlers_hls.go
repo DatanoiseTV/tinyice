@@ -45,6 +45,7 @@ func (s *Server) handleHLSPlaylist(w http.ResponseWriter, r *http.Request) {
 		stream.RecordViewer(s.clientIP(r), time.Now())
 	}
 
+	s.touchHLS(mount)
 	playlist := hls.Playlist()
 
 	w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
@@ -89,6 +90,7 @@ func (s *Server) handleHLSSegment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.touchHLS(mount)
 	segment := hls.Ring().Get(seq)
 	if segment == nil {
 		http.NotFound(w, r)
@@ -301,6 +303,24 @@ func (s *Server) handlePoster(w http.ResponseWriter, r *http.Request) {
 }
 
 // getHLSOutput finds the HLS output for a given mount.
+// touchHLS records that a client asked for this mount's playlist or a
+// segment, so the janitor can tell a watched output from an abandoned
+// one.
+func (s *Server) touchHLS(mount string) {
+	s.hlsMu.Lock()
+	if s.hlsLastAccess == nil {
+		s.hlsLastAccess = make(map[string]time.Time)
+	}
+	s.hlsLastAccess[mount] = time.Now()
+	s.hlsMu.Unlock()
+}
+
+func (s *Server) hlsAccessTime(mount string) time.Time {
+	s.hlsMu.RLock()
+	defer s.hlsMu.RUnlock()
+	return s.hlsLastAccess[mount]
+}
+
 func (s *Server) getHLSOutput(mount string) *relay.HLSOutput {
 	s.hlsMu.RLock()
 	defer s.hlsMu.RUnlock()
@@ -372,6 +392,7 @@ func (s *Server) UnregisterHLS(mount string) {
 	if hls, ok := s.hlsOutputs[mount]; ok {
 		hls.Stop()
 		delete(s.hlsOutputs, mount)
+		delete(s.hlsLastAccess, mount)
 	}
 	s.hlsMu.Unlock()
 }

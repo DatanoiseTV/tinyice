@@ -624,14 +624,14 @@ func (h *rtmpHandler) OnClose() {
 // `publishName` (from the publish command) into a tinyice mount path and
 // source password. Two layouts are supported:
 //
-//   1. OBS default — Server "rtmp://host/mount", Stream Key "password".
-//      The RTMP app is the mount; the stream key is the password. This is
-//      how encoders treat Twitch/YouTube/nginx-rtmp-style URLs, so OBS
-//      users can just fill in the two fields the way OBS shows them.
+//  1. OBS default — Server "rtmp://host/mount", Stream Key "password".
+//     The RTMP app is the mount; the stream key is the password. This is
+//     how encoders treat Twitch/YouTube/nginx-rtmp-style URLs, so OBS
+//     users can just fill in the two fields the way OBS shows them.
 //
-//   2. Classic tinyice — Server "rtmp://host/", Stream Key
-//      "mount?key=password". Kept for backward compatibility and CLIs
-//      that only take a single URL.
+//  2. Classic tinyice — Server "rtmp://host/", Stream Key
+//     "mount?key=password". Kept for backward compatibility and CLIs
+//     that only take a single URL.
 //
 // A publishing name that contains "?" always uses layout 2, so legacy
 // ?key= parameters keep working regardless of what's in the app slot.

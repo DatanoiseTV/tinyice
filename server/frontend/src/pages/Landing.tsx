@@ -4,11 +4,13 @@ import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import { Nav } from '@/components/Nav'
 import { StreamCard } from '@/components/StreamCard'
+import { STREAM_TTL_MS } from '@/lib/liveStreams'
 import { createSSE } from '@/lib/sse'
 import type { LandingData, StreamInfo } from '@/types'
 
 const data = (window.__TINYICE__ ?? {}) as Partial<LandingData>
 const streams = signal<StreamInfo[]>(data.streams ?? [])
+const lastSeen = new Map<string, number>()
 
 // Configure marked for safe rendering
 marked.setOptions({ breaks: true, gfm: true })
@@ -26,20 +28,40 @@ export function Landing() {
   useEffect(() => {
     const sse = createSSE('/events')
 
-    sse.on('streams', (updated) => {
-      streams.value = updated
-    })
 
     sse.on('stream', (evt) => {
+      lastSeen.set(evt.mount, Date.now())
       streams.value = streams.value.map((s) =>
         s.mount === evt.mount
-          ? { ...s, title: evt.title, artist: evt.artist, listeners: evt.listeners, live: true }
+          ? {
+              ...s,
+              title: evt.title,
+              artist: evt.artist,
+              listeners: evt.listeners,
+              // The event says whether a source is connected; this used
+              // to hardcode true, so a mount that existed without a
+              // source showed as on air.
+              live: evt.live ?? true,
+            }
           : s
       )
     })
+    // A mount stops sending `stream` events when its source goes away;
+    // without this it stayed marked live on the page indefinitely.
+    const sweep = setInterval(() => {
+      const now = Date.now()
+      streams.value = streams.value.map((s) => {
+        const seen = lastSeen.get(s.mount)
+        if (seen === undefined) return s
+        return now - seen < STREAM_TTL_MS ? s : { ...s, live: false, listeners: 0 }
+      })
+    }, 2000)
 
 
-    return () => sse.close()
+    return () => {
+      clearInterval(sweep)
+      sse.close()
+    }
   }, [])
 
   const liveStreams = streams.value.filter((s) => s.live)

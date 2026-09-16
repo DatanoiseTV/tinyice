@@ -28,7 +28,7 @@ export function Embed() {
 
   function togglePlay() {
     const audio = audioRef.current
-    if (!audio) return
+    if (!audio || !data.mount) return
     if (playing.value) {
       audio.pause()
       audio.src = ''

@@ -18,7 +18,7 @@ func TestParseADTSFrames(t *testing.T) {
 	frame[3] |= byte((17 >> 11) & 0x03)
 	frame[4] = byte((17 >> 3) & 0xFF)
 	frame[5] = byte((17&0x07)<<5) | 0x1F // frame_length low + buffer fullness high
-	frame[6] = 0xFC                       // buffer fullness low + num_raw_data_blocks=0
+	frame[6] = 0xFC                      // buffer fullness low + num_raw_data_blocks=0
 
 	// Fill payload
 	for i := 7; i < 17; i++ {
