@@ -5,6 +5,25 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.10.2] - 2026-09-16
+
+### Fixed
+
+- **Ogg mounts played silence in browsers.** The AutoDJ starts a fresh
+  Ogg stream per track, so each track's OpusHead/OpusTags pages stay in
+  the mount's circular buffer under their own serial. `Subscribe`
+  clamped a new listener's start offset to `OggHeaderOffset` and then
+  let the page alignment undo it — with no tracked page at or after the
+  current headers (the state immediately after a track change) the
+  `oldestValid` fallback rewound to the oldest page in the whole buffer.
+  Listeners received several previous tracks' header pairs, granule 0
+  and no audio, before the real stream. ffmpeg skips to the chain that
+  has audio, so every command-line check looked healthy; browsers latch
+  onto the first chain, find it empty and play nothing. Measured on a
+  live mount: five orphan header pairs in the first 515 bytes ahead of
+  1591 continuous pages. The header offset is now a floor the alignment
+  respects.
+
 ## [2.10.1] - 2026-09-16
 
 ### Fixed
@@ -722,6 +741,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   this release line as `daf5368`). The previous full-lock fan-
   out was the dominant lock-contention vector under load.
 
+[2.10.2]: https://github.com/DatanoiseTV/tinyice/releases/tag/v2.10.2
 [2.10.1]: https://github.com/DatanoiseTV/tinyice/releases/tag/v2.10.1
 [2.10.0]: https://github.com/DatanoiseTV/tinyice/releases/tag/v2.10.0
 [2.9.0]: https://github.com/DatanoiseTV/tinyice/releases/tag/v2.9.0
