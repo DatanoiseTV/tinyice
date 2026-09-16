@@ -85,24 +85,8 @@ func (s *Server) handleEmbed(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleExplore(w http.ResponseWriter, r *http.Request) {
-	allStreams := s.Relay.Snapshot()
-	var streamList []map[string]interface{}
-	for _, st := range allStreams {
-		if st.Visible {
-			streamList = append(streamList, map[string]interface{}{
-				"mount":     st.MountName,
-				"title":     st.CurrentSong,
-				"artist":    st.Name,
-				"format":    st.ContentType,
-				"bitrate":   st.Bitrate,
-				"listeners": st.ListenersCount,
-				"live":      st.SourceIP != "",
-			})
-		}
-	}
-
 	pageData := s.BasePageData("")
-	pageData["streams"] = streamList
+	pageData["streams"] = s.visibleStreamList()
 	s.shell.Render(w, "explore", "Explore — "+s.Config.PageTitle, pageData)
 }
 

@@ -637,6 +637,11 @@ type icyState struct {
 	bytesSentSinceMeta int
 }
 
+// maxBurstSize bounds the per-mount burst an admin can configure. The burst
+// is a prefix of the mount's circular buffer, so anything beyond it is
+// meaningless; the cap keeps a mistyped value from being stored.
+const maxBurstSize = 8 * 1024 * 1024
+
 func (s *Server) serveStreamData(w http.ResponseWriter, r *http.Request, stream *relay.Stream, id, originalMount, currentMount string, recoveryTicker *time.Ticker, metaint int, icy *icyState) bool {
 	// Burst size defaults to 512 KiB but can be overridden per mount via
 	// AdvancedMounts.BurstSize (the "Advanced Mount Settings" UI field).
@@ -646,6 +651,9 @@ func (s *Server) serveStreamData(w http.ResponseWriter, r *http.Request, stream 
 	burst := 512 * 1024
 	if adv, ok := s.Config.AdvancedMounts[currentMount]; ok && adv != nil && adv.BurstSize > 0 {
 		burst = adv.BurstSize
+		if burst > maxBurstSize {
+			burst = maxBurstSize
+		}
 	}
 	offset, signal := stream.Subscribe(id, burst)
 	defer stream.Unsubscribe(id)
@@ -871,8 +879,11 @@ func (s *Server) serveStreamData(w http.ResponseWriter, r *http.Request, stream 
 	}
 }
 
-func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
-	// Build stream list for the landing page
+// visibleStreamList builds the StreamInfo array the landing and explore
+// pages are bootstrapped with. Both pages used to build it separately and
+// had drifted: explore's copy omitted has_video, so a video mount rendered
+// there as audio-only and its player opened without picture.
+func (s *Server) visibleStreamList() []map[string]interface{} {
 	allStreams := s.Relay.Snapshot()
 	videoMounts := make(map[string]bool)
 	for _, st := range allStreams {
@@ -895,9 +906,12 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 			})
 		}
 	}
+	return streamList
+}
 
+func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	pageData := s.BasePageData("")
-	pageData["streams"] = streamList
+	pageData["streams"] = s.visibleStreamList()
 	s.shell.Render(w, "landing", s.Config.PageTitle, pageData)
 }
 

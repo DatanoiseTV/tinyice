@@ -16,10 +16,12 @@ import { LiveGeoMap, type GeoCity } from '../components/LiveGeoMap'
 // re-render whenever data arrives. Wall clock + LTC tick locally
 // at 25 fps (40 ms) on a separate animation timer.
 
-// Pulled from window.__TINYICE__ — set by the Go shell renderer.
+// Pulled from window.__TINYICE__ — set by the Go shell renderer. The
+// field names must match BasePageData: this used to read `title` /
+// `subtitle`, which the server never injects, so the wall display always
+// showed the hardcoded fallback instead of the installation's name.
 type PageData = {
-  title?: string
-  subtitle?: string
+  pageTitle?: string
   branding?: { accentColor?: string; logoUrl?: string | null }
   user?: { username?: string; role?: string }
 }
@@ -149,7 +151,7 @@ export function KioskDashboard() {
             On Air
           </span>
           <span class="text-lg font-bold leading-none truncate">
-            {data.title || 'TinyIce'}
+            {data.pageTitle || 'TinyIce'}
           </span>
         </div>
 

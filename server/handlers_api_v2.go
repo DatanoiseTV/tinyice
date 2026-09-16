@@ -220,6 +220,10 @@ func (s *Server) apiCreateStream(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Mount    string `json:"mount"`
 		Password string `json:"password"`
+		// The create form has always had a burst-size field; the handler
+		// never read it, so the value was collected and thrown away and
+		// every mount ran on the 512 KiB default.
+		BurstSize int `json:"burst_size"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		jsonError(w, "Invalid request body", http.StatusBadRequest)
@@ -227,6 +231,10 @@ func (s *Server) apiCreateStream(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.Mount == "" || body.Password == "" {
 		jsonError(w, "Mount and password are required", http.StatusBadRequest)
+		return
+	}
+	if body.BurstSize < 0 || body.BurstSize > maxBurstSize {
+		jsonError(w, fmt.Sprintf("burst_size must be between 0 and %d", maxBurstSize), http.StatusBadRequest)
 		return
 	}
 	if body.Mount[0] != '/' {
@@ -251,6 +259,16 @@ func (s *Server) apiCreateStream(w http.ResponseWriter, r *http.Request) {
 	} else {
 		s.Config.LockMaps()
 		user.Mounts[body.Mount] = hashed
+		s.Config.UnlockMaps()
+	}
+	if body.BurstSize > 0 {
+		s.Config.LockMaps()
+		adv, ok := s.Config.AdvancedMounts[body.Mount]
+		if !ok || adv == nil {
+			adv = &config.MountSettings{}
+			s.Config.AdvancedMounts[body.Mount] = adv
+		}
+		adv.BurstSize = body.BurstSize
 		s.Config.UnlockMaps()
 	}
 	s.Config.SaveConfig()

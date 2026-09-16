@@ -627,7 +627,14 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		s.recordAuthSuccess(host)
 		s.createSession(w, r, user)
 		s.Audit(r, "login", "auth", u, "")
-		http.Redirect(w, r, "/admin", http.StatusSeeOther)
+		// Honour the ?next= that the auth redirects already emit (/kiosk
+		// sends one); previously every login landed on /admin and the
+		// user had to navigate back by hand.
+		next := r.FormValue("next")
+		if next == "" {
+			next = r.URL.Query().Get("next")
+		}
+		http.Redirect(w, r, safeNextPath(next), http.StatusSeeOther)
 		return
 	}
 

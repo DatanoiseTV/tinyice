@@ -111,7 +111,7 @@ async function saveMount() {
       await api.post('/api/streams', {
         mount: formMount.value,
         password: formPassword.value,
-        burstSize: formBurst.value,
+        burst_size: formBurst.value,
       })
     }
     showModal.value = false

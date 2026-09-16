@@ -39,6 +39,26 @@ func (s *Server) requireMountAccess(w http.ResponseWriter, r *http.Request, moun
 	return mount, true
 }
 
+// safeNextPath sanitises a post-login redirect target. Only same-origin
+// absolute paths are accepted: anything with a scheme, an authority
+// ("//evil.example" and its "/\evil.example" browser-equivalent) or a
+// relative shape falls back to /admin. Without this the ?next= that
+// /kiosk already emits would be an open redirect.
+func safeNextPath(next string) string {
+	const fallback = "/admin"
+	if next == "" || next[0] != '/' {
+		return fallback
+	}
+	if len(next) > 1 && (next[1] == '/' || next[1] == '\\') {
+		return fallback
+	}
+	u, err := url.Parse(next)
+	if err != nil || u.Scheme != "" || u.Host != "" {
+		return fallback
+	}
+	return next
+}
+
 // validateOutboundURL rejects URLs that we shouldn't allow users to point
 // outbound HTTP clients at — loopback, RFC1918 private ranges, link-local,
 // multicast, unspecified addresses. Used to keep webhook + relay URL fields
