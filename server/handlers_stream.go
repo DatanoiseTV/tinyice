@@ -484,7 +484,7 @@ func (s *Server) handleListener(w http.ResponseWriter, r *http.Request) {
 	defer recoveryTicker.Stop()
 
 	var primaryFirstSeen time.Time
-	const fallbackHysteresis = 30 * time.Second
+	icy := &icyState{}
 
 	// served flips once headers + data have gone to this client. It
 	// decides what "both primary and fallback are down" means: for a
@@ -614,14 +614,30 @@ func (s *Server) handleListener(w http.ResponseWriter, r *http.Request) {
 
 		served = true
 		outageSince = time.Time{}
-		if !s.serveStreamData(w, r, stream, id, originalMount, mount, recoveryTicker, metaint) {
+		if !s.serveStreamData(w, r, stream, id, originalMount, mount, recoveryTicker, metaint, icy) {
 			return
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
 }
 
-func (s *Server) serveStreamData(w http.ResponseWriter, r *http.Request, stream *relay.Stream, id, originalMount, currentMount string, recoveryTicker *time.Ticker, metaint int) bool {
+// fallbackHysteresis is how long the primary mount must be back before a
+// listener on its fallback is moved across. Shared by handleListener and
+// serveStreamData so the two agree on when a switch is due.
+const fallbackHysteresis = 30 * time.Second
+
+// icyState carries the ICY metadata cadence across re-subscribes.
+// bytesSentSinceMeta used to be a local, reset to 0 every time
+// serveStreamData was re-entered (fallback switch, post-flush recovery).
+// The client counts bytes from ITS side and expects a metadata block
+// after exactly metaint of them, so restarting our counter mid-connection
+// put the block in the wrong place and the client parsed audio as a title
+// (audible click plus garbage metadata) from then on.
+type icyState struct {
+	bytesSentSinceMeta int
+}
+
+func (s *Server) serveStreamData(w http.ResponseWriter, r *http.Request, stream *relay.Stream, id, originalMount, currentMount string, recoveryTicker *time.Ticker, metaint int, icy *icyState) bool {
 	// Burst size defaults to 512 KiB but can be overridden per mount via
 	// AdvancedMounts.BurstSize (the "Advanced Mount Settings" UI field).
 	// At typical listener bitrates (128–320 kbps) this puts 10–30 seconds
@@ -715,7 +731,6 @@ func (s *Server) serveStreamData(w http.ResponseWriter, r *http.Request, stream 
 	buf := make([]byte, 64*1024)
 	flusher, _ := w.(http.Flusher)
 
-	bytesSentSinceMeta := 0
 	lastSong := ""
 
 	consecutiveSkips := 0
@@ -728,6 +743,7 @@ func (s *Server) serveStreamData(w http.ResponseWriter, r *http.Request, stream 
 	// the gap. Read once at subscribe time so we only react to bumps
 	// that happen AFTER we started reading.
 	lastFlushGen := stream.FlushGen()
+	var primaryUpSince time.Time
 
 	for {
 		select {
@@ -736,9 +752,22 @@ func (s *Server) serveStreamData(w http.ResponseWriter, r *http.Request, stream 
 		case <-r.Context().Done():
 			return false
 		case <-recoveryTicker.C:
+			// Hand control back only once the primary has been up long
+			// enough that handleListener will really switch to it.
+			// Returning on the first tick meant a re-subscribe every 10 s
+			// for the whole 30 s hysteresis window — each one re-bursts
+			// and re-aligns the listener's offset, so the audio hiccupped
+			// three times before anything changed.
 			if currentMount != originalMount {
 				if _, ok := s.Relay.GetStream(originalMount); ok {
-					return true
+					if primaryUpSince.IsZero() {
+						primaryUpSince = time.Now()
+					}
+					if time.Since(primaryUpSince) >= fallbackHysteresis {
+						return true
+					}
+				} else {
+					primaryUpSince = time.Time{}
 				}
 			}
 		case _, ok := <-signal:
@@ -752,13 +781,13 @@ func (s *Server) serveStreamData(w http.ResponseWriter, r *http.Request, stream 
 					// Reset the ICY meta-interval counter so the
 					// 16000-byte boundary stays aligned to the new
 					// post-flush byte stream.
-					bytesSentSinceMeta = 0
+					icy.bytesSentSinceMeta = 0
 				}
 			}
 			for {
 				readLimit := len(buf)
 				if metaint > 0 {
-					remaining := metaint - bytesSentSinceMeta
+					remaining := metaint - icy.bytesSentSinceMeta
 					if remaining < readLimit {
 						readLimit = remaining
 					}
@@ -801,8 +830,8 @@ func (s *Server) serveStreamData(w http.ResponseWriter, r *http.Request, stream 
 				}
 
 				if metaint > 0 {
-					bytesSentSinceMeta += n
-					if bytesSentSinceMeta >= metaint {
+					icy.bytesSentSinceMeta += n
+					if icy.bytesSentSinceMeta >= metaint {
 						currentSong := stream.GetCurrentSong()
 						meta := ""
 						if currentSong != lastSong {
@@ -810,6 +839,15 @@ func (s *Server) serveStreamData(w http.ResponseWriter, r *http.Request, stream 
 							lastSong = currentSong
 						}
 
+						// The ICY length byte counts 16-byte blocks, so
+						// the block can hold at most 255*16 = 4080 bytes.
+						// A longer title overflowed byte(l) and the client
+						// then read the tail of the title as audio —
+						// a burst of noise and a desynchronised stream.
+						const maxICYMeta = 255 * 16
+						if len(meta) > maxICYMeta {
+							meta = meta[:maxICYMeta-2] + "';"
+						}
 						l := (len(meta) + 15) / 16
 						res := make([]byte, 1+l*16)
 						res[0] = byte(l)
@@ -819,7 +857,7 @@ func (s *Server) serveStreamData(w http.ResponseWriter, r *http.Request, stream 
 						if _, err := w.Write(res); err != nil {
 							return false
 						}
-						bytesSentSinceMeta = 0
+						icy.bytesSentSinceMeta = 0
 					}
 				}
 

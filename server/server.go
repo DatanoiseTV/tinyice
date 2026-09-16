@@ -84,7 +84,8 @@ type Server struct {
 	scanAttempts   map[string]*scanAttempt
 	scanAttemptsMu sync.Mutex
 
-	hlsOutputs map[string]*relay.HLSOutput
+	hlsOutputs    map[string]*relay.HLSOutput
+	hlsLastAccess map[string]time.Time // last playlist/segment request per mount
 	hlsMu      sync.RWMutex
 	hlsCtx     context.Context
 	hlsCancel  context.CancelFunc
@@ -192,6 +193,7 @@ func NewServer(cfg *config.Config, authLog *zap.SugaredLogger, version, commit, 
 		authAttempts: make(map[string]*authAttempt),
 		scanAttempts: make(map[string]*scanAttempt),
 		hlsOutputs:       make(map[string]*relay.HLSOutput),
+		hlsLastAccess:    make(map[string]time.Time),
 		hlsCtx:           hlsCtx,
 		hlsCancel:        hlsCancel,
 		posters:          make(map[string][]byte),
@@ -858,6 +860,7 @@ func (s *Server) Start() error {
 		go s.directoryReportingTask()
 	}
 	go s.statsRecordingTask()
+	go s.hlsJanitorTask()
 	go s.HealthM.Start(context.Background())
 	go s.sessionReaperTask()
 	// Internal-only metrics + pprof port. See startMetricsServer for the

@@ -1022,3 +1022,13 @@ func (s *Stream) GetStartedTime() time.Time {
 	defer s.mu.RUnlock()
 	return s.Started
 }
+
+// SetContentTypeForTest sets ContentType under the stream mutex. Tests
+// need this because ContentType is written by ingest paths that a unit
+// test doesn't run; production code sets it inline while already holding
+// the lock.
+func (s *Stream) SetContentTypeForTest(ct string) {
+	s.mu.Lock()
+	s.ContentType = ct
+	s.mu.Unlock()
+}

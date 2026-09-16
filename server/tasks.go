@@ -213,3 +213,48 @@ func normaliseYPGenre(g string) string {
 	}
 	return strings.Join(out, " ")
 }
+
+// hlsIdleTimeout is how long an HLS output may sit with no playlist or
+// segment request, and no live stream behind it, before it is torn down.
+// Generous on purpose: the byte-path segment loop deliberately survives a
+// source flap, so the mount being momentarily absent is NOT a reason to
+// evict.
+const hlsIdleTimeout = 10 * time.Minute
+
+// hlsJanitorTask unregisters HLS outputs nobody is watching. Nothing ever
+// called UnregisterHLS, so every mount that was ever requested kept its
+// segment ring — up to 90 MPEG-TS segments each, several MB per mount —
+// plus its segment goroutine, for the life of the process.
+func (s *Server) hlsJanitorTask() {
+	ticker := time.NewTicker(1 * time.Minute)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-s.done:
+			return
+		case <-ticker.C:
+			now := time.Now()
+			var stale []string
+			s.hlsMu.RLock()
+			for mount := range s.hlsOutputs {
+				last, seen := s.hlsLastAccess[mount]
+				if !seen {
+					continue // registered but never served; leave it for the next pass
+				}
+				if now.Sub(last) < hlsIdleTimeout {
+					continue
+				}
+				if _, live := s.Relay.GetStream(mount); live {
+					continue // still producing; a viewer may return
+				}
+				stale = append(stale, mount)
+			}
+			s.hlsMu.RUnlock()
+			for _, mount := range stale {
+				logger.L.Infow("HLS: unregistering idle output", "mount", mount,
+					"idle", now.Sub(s.hlsAccessTime(mount)).Round(time.Second))
+				s.UnregisterHLS(mount)
+			}
+		}
+	}
+}
