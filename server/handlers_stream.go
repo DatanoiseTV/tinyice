@@ -266,6 +266,13 @@ func (s *Server) handleSource(w http.ResponseWriter, r *http.Request) {
 	var headerBuf []byte
 	captureStartOffset := stream.Buffer.HeadOffset()
 
+	// Vorbis/Opus sources put TITLE/ARTIST in the Ogg comment header, not
+	// in an ICY metadata request; feed history from there.
+	var sniffer *relay.OggCommentSniffer
+	if captureHeaders {
+		sniffer = relay.NewOggCommentSniffer(func(song string) { stream.SetCurrentSong(song, s.Relay) })
+	}
+
 	buf := make([]byte, 8192)
 	var totalIn atomic.Int64
 
@@ -315,6 +322,9 @@ func (s *Server) handleSource(w http.ResponseWriter, r *http.Request) {
 		if n > 0 {
 			totalIn.Add(int64(n))
 			stream.Broadcast(buf[:n], s.Relay)
+			if sniffer != nil {
+				sniffer.Feed(buf[:n])
+			}
 			if captureHeaders {
 				headerBuf = append(headerBuf, buf[:n]...)
 				endPos, needMore, abort := relay.FindOggHeaderEnd(headerBuf)

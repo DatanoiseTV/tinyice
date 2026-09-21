@@ -5,6 +5,19 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **Track history stayed empty for Ogg Vorbis sources (#64).** Only the
+  relay pull path looked for tags, and only for the literal `OpusTags`, so
+  Vorbis comment headers (Traktor, Mixxx) never reached `SetCurrentSong`;
+  direct source connections were never sniffed at all. A new
+  `OggCommentSniffer` parses whole Ogg pages, handles Vorbis and Opus
+  comment headers split across reads or pages, and is used on both paths.
+  The metadata endpoint now returns 404 instead of success when the mount
+  has no live source.
+
 ## [2.10.2] - 2026-09-16
 
 ### Fixed

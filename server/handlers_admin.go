@@ -248,9 +248,13 @@ func (s *Server) handleMetadata(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if mount != "" && song != "" {
-		if st, ok := s.Relay.GetStream(mount); ok {
-			st.SetCurrentSong(song, s.Relay)
+		st, ok := s.Relay.GetStream(mount)
+		if !ok {
+			w.WriteHeader(http.StatusNotFound)
+			fmt.Fprint(w, "<?xml version=\"1.0\"?>\n<iceresponse><message>No such mount</message><return>0</return></iceresponse>\n")
+			return
 		}
+		st.SetCurrentSong(song, s.Relay)
 	}
 	fmt.Fprint(w, "<?xml version=\"1.0\"?>\n<iceresponse><message>OK</message><return>1</return></iceresponse>\n")
 }

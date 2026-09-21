@@ -1,7 +1,6 @@
 package relay
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -302,6 +301,8 @@ func (i *idleResetReader) Read(p []byte) (int, error) {
 
 func (rm *RelayManager) pullSimple(ctx context.Context, body io.Reader, stream *Stream) {
 	buf := make([]byte, 16384)
+	// Ogg Vorbis/Opus carry track info in comment headers rather than ICY blocks.
+	sniffer := NewOggCommentSniffer(func(song string) { stream.SetCurrentSong(song, rm.relay) })
 	for {
 		select {
 		case <-ctx.Done():
@@ -312,35 +313,7 @@ func (rm *RelayManager) pullSimple(ctx context.Context, body io.Reader, stream *
 				data := buf[:n]
 				stream.Broadcast(data, rm.relay)
 
-				// Sniff for Opus metadata (Vorbis comments) in Ogg pages
-				// Look for "OpusTags" magic
-				if idx := bytes.Index(data, []byte("OpusTags")); idx != -1 {
-					// Found tags! Extract title if possible
-					// Skip "OpusTags" (8 bytes)
-					tagsData := data[idx+8:]
-					if len(tagsData) > 8 {
-						// Simple sniffer for "TITLE="
-						tagsStr := string(tagsData)
-						if strings.Contains(tagsStr, "TITLE=") {
-							title := strings.Split(tagsStr, "TITLE=")[1]
-							// Titles in Ogg are often null-terminated or limited by length
-							// For simplicity, we just take a reasonable chunk and trim
-							if len(title) > 100 {
-								title = title[:100]
-							}
-							// Clean up
-							title = strings.Map(func(r rune) rune {
-								if r < 32 || r > 126 {
-									return -1
-								}
-								return r
-							}, title)
-							if title != "" {
-								stream.SetCurrentSong(title, rm.relay)
-							}
-						}
-					}
-				}
+				sniffer.Feed(data)
 			}
 			if err != nil {
 				return
