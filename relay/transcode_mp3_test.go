@@ -3,10 +3,12 @@ package relay
 import (
 	"bytes"
 	"context"
+	"io"
 	"math"
 	"testing"
 
 	shine "github.com/braheezy/shine-mp3/pkg/mp3"
+	gomp3 "github.com/hajimehoshi/go-mp3"
 )
 
 // mpeg1Layer3Kbps is the MPEG-1 Layer III bitrate table indexed by the
@@ -126,4 +128,61 @@ func itoa(n int) string {
 		n /= 10
 	}
 	return string(b)
+}
+
+// EncodeMP3 must encode every PCM sample it is handed. shine-mp3 v0.2.0's
+// Encoder.Write slices each stereo chunk to half a frame and drops the rest,
+// which decodes as a tone chopped by silence (#63). Encode a continuous tone,
+// decode it again, and require that nothing in the steady state is silent.
+func TestEncodeMP3RoundTripHasNoDroppedAudio(t *testing.T) {
+	const sampleRate = 44100
+	r := NewRelay(false, nil)
+	out := r.GetOrCreateStream("/mp3-roundtrip")
+	offset, _ := out.Subscribe("probe", 0)
+
+	pcm := bytes.NewReader(tonePCM(2.0, sampleRate))
+	EncodeMP3(context.Background(), r, out, pcm, 128, nil, false, sampleRate)
+
+	var encoded []byte
+	buf := make([]byte, 64*1024)
+	for {
+		n, next, _ := out.Buffer.ReadAt(offset, buf)
+		if n == 0 {
+			break
+		}
+		encoded = append(encoded, buf[:n]...)
+		offset = next
+	}
+
+	dec, err := gomp3.NewDecoder(bytes.NewReader(encoded))
+	if err != nil {
+		t.Fatalf("decoding encoder output: %v", err)
+	}
+	raw, err := io.ReadAll(dec)
+	if err != nil {
+		t.Fatalf("reading decoded PCM: %v", err)
+	}
+
+	// Skip the encoder/decoder delay at both ends, then walk 64-sample
+	// windows: a 440 Hz tone at this level has no window with a tiny peak.
+	const window = 64
+	start, end := 8192*4, len(raw)-8192*4
+	if end-start < 44100*4 {
+		t.Fatalf("decoded only %d bytes from 2 s of input", len(raw))
+	}
+	for i := start; i+window*4 <= end; i += window * 4 {
+		peak := 0
+		for j := 0; j < window; j++ {
+			v := int(int16(uint16(raw[i+j*4]) | uint16(raw[i+j*4+1])<<8))
+			if v < 0 {
+				v = -v
+			}
+			if v > peak {
+				peak = v
+			}
+		}
+		if peak < 3000 {
+			t.Fatalf("decoded audio drops out at byte %d (window peak %d, want ~12000)", i, peak)
+		}
+	}
 }
