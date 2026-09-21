@@ -999,12 +999,13 @@ func (s *Stream) SetBitrateIfUnknown(kbps int) bool {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	switch s.Bitrate {
-	case "", "0", "N/A":
-		s.Bitrate = strconv.Itoa(kbps)
-		return true
+	// Anything that doesn't parse to a positive number ("", "N/A", "0",
+	// "0.0", "-1") counts as undeclared.
+	if declared, err := strconv.ParseFloat(strings.TrimSpace(s.Bitrate), 64); err == nil && declared > 0 {
+		return false
 	}
-	return false
+	s.Bitrate = strconv.Itoa(kbps)
+	return true
 }
 
 // SetCurrentSong updates the current song info thread-safely.

@@ -258,6 +258,10 @@ func (s *Server) handleSource(w http.ResponseWriter, r *http.Request) {
 	})
 
 	s.updateSourceMetadata(stream, mount, r)
+	logger.L.Infow("Source bitrate headers", "mount", mount,
+		"ice_bitrate", r.Header.Get("Ice-Bitrate"),
+		"ice_audio_info", r.Header.Get("Ice-Audio-Info"),
+		"content_type", r.Header.Get("Content-Type"))
 
 	// Late-joining listeners on Ogg-based mounts (Vorbis / Opus / FLAC-in-Ogg)
 	// need the BOS + comment/setup pages prepended so they can initialise the

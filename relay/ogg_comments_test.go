@@ -88,3 +88,12 @@ func TestSetBitrateIfUnknown(t *testing.T) {
 		t.Fatal("overwrote a known bitrate")
 	}
 }
+
+func TestSetBitrateIfUnknownTreatsZeroAsUndeclared(t *testing.T) {
+	for _, declared := range []string{"", "N/A", "0", "0.0", "-1", "abc"} {
+		s := &Stream{Bitrate: declared}
+		if !s.SetBitrateIfUnknown(96) || s.Bitrate != "96" {
+			t.Fatalf("declared %q: got %q", declared, s.Bitrate)
+		}
+	}
+}
