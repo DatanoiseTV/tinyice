@@ -275,6 +275,8 @@ func (s *Server) handleSource(w http.ResponseWriter, r *http.Request) {
 
 	buf := make([]byte, 8192)
 	var totalIn atomic.Int64
+	ingestStart := time.Now()
+	bitrateMeasured := false
 
 	// Zero-data watchdog. A source that authenticates and then delivers
 	// nothing is nearly always an HTTP reverse proxy in front of us: the
@@ -321,6 +323,15 @@ func (s *Server) handleSource(w http.ResponseWriter, r *http.Request) {
 		n, err := src.Read(buf)
 		if n > 0 {
 			totalIn.Add(int64(n))
+			// Sources that declare no bitrate (Traktor over Ogg Vorbis) would
+			// show 0k; after a few seconds, publish the measured rate instead.
+			if elapsed := time.Since(ingestStart); !bitrateMeasured && elapsed >= 10*time.Second {
+				bitrateMeasured = true
+				kbps := int(float64(totalIn.Load()) * 8 / 1000 / elapsed.Seconds())
+				if stream.SetBitrateIfUnknown(kbps) {
+					logger.L.Infow("Source declared no bitrate; using measured rate", "mount", mount, "kbps", kbps)
+				}
+			}
 			stream.Broadcast(buf[:n], s.Relay)
 			if sniffer != nil {
 				sniffer.Feed(buf[:n])

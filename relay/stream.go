@@ -2,6 +2,7 @@ package relay
 
 import (
 	"bytes"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -986,6 +987,24 @@ func (s *Stream) UpdateMetadata(name, desc, genre, url, bitrate, contentType str
 		changed = true
 	}
 	return changed
+}
+
+// SetBitrateIfUnknown records a measured bitrate (kbps) when the source
+// never advertised one. Encoders like Traktor send no Ice-Bitrate or
+// Ice-Audio-Info header, which otherwise leaves the mount showing 0k.
+// A bitrate the source did declare is never overwritten.
+func (s *Stream) SetBitrateIfUnknown(kbps int) bool {
+	if kbps <= 0 {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	switch s.Bitrate {
+	case "", "0", "N/A":
+		s.Bitrate = strconv.Itoa(kbps)
+		return true
+	}
+	return false
 }
 
 // SetCurrentSong updates the current song info thread-safely.

@@ -17,6 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   comment headers split across reads or pages, and is used on both paths.
   The metadata endpoint now returns 404 instead of success when the mount
   has no live source.
+  Sources that send no `Ice-Bitrate`/`Ice-Audio-Info` header (Traktor) no
+  longer show `0k`: after 10 s the measured ingest rate is used, and a
+  declared bitrate is never overwritten.
 
 ## [2.10.2] - 2026-09-16
 

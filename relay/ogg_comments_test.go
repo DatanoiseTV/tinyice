@@ -78,3 +78,13 @@ func TestOggCommentSnifferIgnoresAudio(t *testing.T) {
 		t.Fatal("unexpected song")
 	}
 }
+
+func TestSetBitrateIfUnknown(t *testing.T) {
+	s := &Stream{}
+	if !s.SetBitrateIfUnknown(112) || s.Bitrate != "112" {
+		t.Fatalf("got %q", s.Bitrate)
+	}
+	if s.SetBitrateIfUnknown(64) || s.Bitrate != "112" {
+		t.Fatal("overwrote a known bitrate")
+	}
+}
