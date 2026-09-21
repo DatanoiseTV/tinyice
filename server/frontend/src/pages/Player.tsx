@@ -789,7 +789,7 @@ async function pickAudioSource(mountPath: string): Promise<string> {
             {data.mount}
           </span>
           <span class="font-mono text-[9px] tracking-widest text-text-tertiary/50 uppercase">
-            {data.bitrate}kbps {data.format}
+            {streamStats.value.audioBitrateKbps || data.bitrate}kbps {data.format}
           </span>
           <span class="font-mono text-[9px] tracking-widest text-text-tertiary/50 uppercase">
             {listeners} {audienceLabel(listeners.value, false)}

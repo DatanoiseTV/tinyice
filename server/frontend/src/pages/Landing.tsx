@@ -38,6 +38,9 @@ export function Landing() {
               title: evt.title,
               artist: evt.artist,
               listeners: evt.listeners,
+              // Bitrate can arrive after connect (measured for sources that
+              // declare none), so keep the last positive value from the event.
+              bitrate: Number(evt.bitrate) > 0 ? Number(evt.bitrate) : s.bitrate,
               // The event says whether a source is connected; this used
               // to hardcode true, so a mount that existed without a
               // source showed as on air.
