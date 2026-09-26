@@ -1,3 +1,16 @@
+//go:build !race
+
+// This test is excluded from -race builds. The race detector also enables
+// checkptr, and kazzmir/opus-go does pointer arithmetic on a null pointer
+// inside Opus_silk_Get_Encoder_Size (a C sizeof-via-offset idiom carried
+// over by the C-to-Go translation), which checkptr reports as a fatal
+// "pointer arithmetic result points to invalid allocation" on the very
+// first opus.NewEncoder call. It is not a regression from any version
+// bump: v1.3.0 and v1.4.0 both do it, and it was simply never reached
+// under -race before this test existed. Excluding the file keeps the race
+// detector usable on the rest of the relay package while the content
+// check still runs in the normal suite.
+
 package relay
 
 import (
