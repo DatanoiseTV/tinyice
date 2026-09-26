@@ -18,6 +18,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `EncodeMP3` now feeds each frame to `EncodeBufferInterleaved` directly.
   A round-trip test encodes a continuous tone, decodes it and fails on
   any dropout; it fails without the fix.
+- **Track history stayed empty for Ogg Vorbis sources (#64).** Only the
+  relay pull path looked for tags, and only for the literal `OpusTags`, so
+  Vorbis comment headers (Traktor, Mixxx) never reached `SetCurrentSong`;
+  direct source connections were never sniffed at all. A new
+  `OggCommentSniffer` parses whole Ogg pages, handles Vorbis and Opus
+  comment headers split across reads or pages, and is used on both paths.
+  The metadata endpoint now returns 404 instead of success when the mount
+  has no live source.
+  Sources that send no `Ice-Bitrate`/`Ice-Audio-Info` header (Traktor) no
+  longer show `0k`: after 10 s the measured ingest rate is used, and a
+  declared bitrate is never overwritten.
 
 ## [2.10.2] - 2026-09-16
 

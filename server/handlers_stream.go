@@ -258,6 +258,10 @@ func (s *Server) handleSource(w http.ResponseWriter, r *http.Request) {
 	})
 
 	s.updateSourceMetadata(stream, mount, r)
+	logger.L.Infow("Source bitrate headers", "mount", mount,
+		"ice_bitrate", r.Header.Get("Ice-Bitrate"),
+		"ice_audio_info", r.Header.Get("Ice-Audio-Info"),
+		"content_type", r.Header.Get("Content-Type"))
 
 	// Late-joining listeners on Ogg-based mounts (Vorbis / Opus / FLAC-in-Ogg)
 	// need the BOS + comment/setup pages prepended so they can initialise the
@@ -266,8 +270,17 @@ func (s *Server) handleSource(w http.ResponseWriter, r *http.Request) {
 	var headerBuf []byte
 	captureStartOffset := stream.Buffer.HeadOffset()
 
+	// Vorbis/Opus sources put TITLE/ARTIST in the Ogg comment header, not
+	// in an ICY metadata request; feed history from there.
+	var sniffer *relay.OggCommentSniffer
+	if captureHeaders {
+		sniffer = relay.NewOggCommentSniffer(func(song string) { stream.SetCurrentSong(song, s.Relay) })
+	}
+
 	buf := make([]byte, 8192)
 	var totalIn atomic.Int64
+	ingestStart := time.Now()
+	bitrateMeasured := false
 
 	// Zero-data watchdog. A source that authenticates and then delivers
 	// nothing is nearly always an HTTP reverse proxy in front of us: the
@@ -314,7 +327,19 @@ func (s *Server) handleSource(w http.ResponseWriter, r *http.Request) {
 		n, err := src.Read(buf)
 		if n > 0 {
 			totalIn.Add(int64(n))
+			// Sources that declare no bitrate (Traktor over Ogg Vorbis) would
+			// show 0k; after a few seconds, publish the measured rate instead.
+			if elapsed := time.Since(ingestStart); !bitrateMeasured && elapsed >= 10*time.Second {
+				bitrateMeasured = true
+				kbps := int(float64(totalIn.Load()) * 8 / 1000 / elapsed.Seconds())
+				if stream.SetBitrateIfUnknown(kbps) {
+					logger.L.Infow("Source declared no bitrate; using measured rate", "mount", mount, "kbps", kbps)
+				}
+			}
 			stream.Broadcast(buf[:n], s.Relay)
+			if sniffer != nil {
+				sniffer.Feed(buf[:n])
+			}
 			if captureHeaders {
 				headerBuf = append(headerBuf, buf[:n]...)
 				endPos, needMore, abort := relay.FindOggHeaderEnd(headerBuf)
