@@ -5,7 +5,36 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.11.0] - 2026-09-27
+
+### Added
+
+- Sources that advertise no bitrate (Traktor over Ogg Vorbis sends no
+  `Ice-Bitrate` or `Ice-Audio-Info`) no longer display as `0k`: the
+  measured ingest rate is published after 10 s, and a bitrate the source
+  did declare is never overwritten. Landing, Explore and the player
+  footer update from the live `stream` events rather than only the
+  page-load payload.
+- `TestEncodeOpusRoundTripHasNoDroppedAudio` and a fuzz harness for the
+  Ogg comment sniffer. Opus had no content test at all, which is the same
+  gap that let #63 ship; the sniffer parses bytes straight off an ingest
+  socket, and 2,989,271 fuzz executions found no panic, spin or unbounded
+  growth. The Opus test is tagged `!race`: opus-go does null-pointer
+  arithmetic in `Opus_silk_Get_Encoder_Size` that checkptr calls fatal,
+  in 1.3.0 and 1.4.0 alike — pre-existing, not a regression, and simply
+  never reached under `-race` before.
+
+### Changed
+
+- `/admin/metadata` returns 404 for a mount with no live source instead
+  of reporting success. This matches Icecast, but a source client pushing
+  metadata during a reconnect gap now sees an error where it previously
+  saw a silent OK.
+- Dependencies: `kazzmir/opus-go` 1.3.0 -> 1.4.0, `pion/webrtc` 4.2.19 ->
+  4.2.20, `go-webauthn` 0.18.0 -> 0.18.1, `x/crypto` 0.55 -> 0.57,
+  `x/oauth2` 0.36 -> 0.37, `x/sys` 0.47 -> 0.48. The Opus bump was
+  verified against the new audio content test, not just a build; the
+  webauthn bump is compile-and-test verified only.
 
 ### Fixed
 
@@ -766,6 +795,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   this release line as `daf5368`). The previous full-lock fan-
   out was the dominant lock-contention vector under load.
 
+[2.11.0]: https://github.com/DatanoiseTV/tinyice/releases/tag/v2.11.0
 [2.10.2]: https://github.com/DatanoiseTV/tinyice/releases/tag/v2.10.2
 [2.10.1]: https://github.com/DatanoiseTV/tinyice/releases/tag/v2.10.1
 [2.10.0]: https://github.com/DatanoiseTV/tinyice/releases/tag/v2.10.0
