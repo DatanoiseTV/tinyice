@@ -404,9 +404,19 @@ func EncodeMP3(ctx context.Context, relay *Relay, output *Stream, decoder io.Rea
 				samples[i] = int16(pcmBuf[i*2]) | int16(pcmBuf[i*2+1])<<8
 			}
 
-			err = encoder.Write(writer, samples[:n/2])
-			if err != nil {
-				return
+			// Feed the frame to the encoder directly rather than through
+			// shine's Encoder.Write: as of v0.2.0 that slices each chunk
+			// as data[i:i+samplesPerPass] while stepping by
+			// samplesPerPass*channels, so for stereo it encodes only the
+			// first half of every frame (zero-padded) and drops the rest,
+			// which is the distortion reported in #63. pcmBuf is exactly
+			// one frame (1152 stereo samples), which is what
+			// EncodeBufferInterleaved expects.
+			frame, written := encoder.EncodeBufferInterleaved(samples[:n/2])
+			if written > 0 {
+				if _, err := writer.Write(frame[:written]); err != nil {
+					return
+				}
 			}
 
 			if pace {

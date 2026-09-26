@@ -5,6 +5,20 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **MP3 transcoders and AutoDJ mounts produced distorted, stuttering
+  audio (#63).** shine-mp3 v0.2.0's `Encoder.Write` slices each chunk as
+  `data[i:i+samplesPerPass]` but advances by `samplesPerPass*channels`, so
+  for stereo it encoded only the first half of every 1152-sample frame,
+  zero-padded the rest and discarded the remaining PCM. Opus was
+  unaffected. Introduced in 2.8.0 with the shine-mp3 0.2.0 update.
+  `EncodeMP3` now feeds each frame to `EncodeBufferInterleaved` directly.
+  A round-trip test encodes a continuous tone, decodes it and fails on
+  any dropout; it fails without the fix.
+
 ## [2.10.2] - 2026-09-16
 
 ### Fixed
