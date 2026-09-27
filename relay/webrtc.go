@@ -45,10 +45,17 @@ func (p *SimplePacer) Pace(duration time.Duration) {
 }
 
 type WebRTCManager struct {
-	api     *webrtc.API
-	relay   *Relay
-	mu      sync.RWMutex
-	sources map[string]*webrtc.PeerConnection
+	api *webrtc.API
+	// sourceAPI is used for ingest only. Its MediaEngine registers just
+	// Opus and H.264, so a publishing browser must send H.264 video or
+	// fail negotiation outright. The alternative is accepting VP8 and
+	// having nothing downstream able to use it: HLS, the mpegts muxer
+	// and WHEP playback are all H.264, and there is no video transcoder
+	// in the binary. Playback keeps the default codec set.
+	sourceAPI *webrtc.API
+	relay     *Relay
+	mu        sync.RWMutex
+	sources   map[string]*webrtc.PeerConnection
 	// sourceDone[mount] is closed by the OnTrack pump goroutine when
 	// it exits. Lets a successor HandleSourceOffer wait for the
 	// previous pump to drain before starting its own, preventing the
@@ -63,8 +70,17 @@ func NewWebRTCManager(r *Relay) *WebRTCManager {
 	s.SetICETimeouts(10*time.Second, 20*time.Second, 2*time.Second)
 
 	api := webrtc.NewAPI(webrtc.WithSettingEngine(s))
+
+	sourceAPI := api
+	if me, err := newSourceMediaEngine(); err != nil {
+		logger.L.Errorw("WebRTC: source media engine failed; ingest falls back to the default codec set", "error", err)
+	} else {
+		sourceAPI = webrtc.NewAPI(webrtc.WithSettingEngine(s), webrtc.WithMediaEngine(me))
+	}
+
 	return &WebRTCManager{
 		api:        api,
+		sourceAPI:  sourceAPI,
 		relay:      r,
 		sources:    make(map[string]*webrtc.PeerConnection),
 		sourceDone: make(map[string]chan struct{}),
@@ -162,7 +178,7 @@ func (rw *relayWriter) Write(p []byte) (n int, err error) {
 }
 
 func (wm *WebRTCManager) HandleSourceOffer(mount string, offer webrtc.SessionDescription) (*webrtc.SessionDescription, error) {
-	peerConnection, err := wm.api.NewPeerConnection(webrtc.Configuration{
+	peerConnection, err := wm.sourceAPI.NewPeerConnection(webrtc.Configuration{
 		ICEServers: []webrtc.ICEServer{
 			{URLs: []string{"stun:stun.l.google.com:19302"}},
 		},
@@ -244,6 +260,7 @@ func (wm *WebRTCManager) HandleSourceOffer(mount string, offer webrtc.SessionDes
 	// "close of closed channel" and took the whole process down. One
 	// track owns the pump; the rest are declined; doneCh closes once.
 	var pumpClaimed atomic.Bool
+	var videoClaimed atomic.Bool
 	var doneOnce sync.Once
 	peerConnection.OnTrack(func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
 		defer func() {
@@ -252,8 +269,22 @@ func (wm *WebRTCManager) HandleSourceOffer(mount string, offer webrtc.SessionDes
 			}
 		}()
 		codec := track.Codec().MimeType
+		// A publisher sending camera or screen capture offers audio and
+		// video on one peer connection. Audio feeds the mount as Ogg
+		// Opus; video feeds the /video sibling as Annex-B H.264, which
+		// is the same shape the RTMP ingest produces, so HLS and WHEP
+		// playback need no changes. One track of each kind is accepted;
+		// extras are declined rather than interleaved.
+		if strings.EqualFold(codec, webrtc.MimeTypeH264) {
+			if !videoClaimed.CompareAndSwap(false, true) {
+				logger.L.Warnw("WebRTC Source: ignoring additional video track; the first one feeds the mount", "track", track.ID(), "mount", mount)
+				return
+			}
+			wm.pumpVideoTrack(srcCtx, mount, track)
+			return
+		}
 		if !strings.EqualFold(codec, webrtc.MimeTypeOpus) {
-			logger.L.Warnw("WebRTC Source: ignoring non-Opus track", "track", track.ID(), "codec", codec, "mount", mount)
+			logger.L.Warnw("WebRTC Source: ignoring unsupported track", "track", track.ID(), "codec", codec, "mount", mount)
 			return
 		}
 		if !pumpClaimed.CompareAndSwap(false, true) {
