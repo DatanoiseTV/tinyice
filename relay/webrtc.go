@@ -280,7 +280,7 @@ func (wm *WebRTCManager) HandleSourceOffer(mount string, offer webrtc.SessionDes
 				logger.L.Warnw("WebRTC Source: ignoring additional video track; the first one feeds the mount", "track", track.ID(), "mount", mount)
 				return
 			}
-			wm.pumpVideoTrack(srcCtx, mount, track)
+			wm.pumpVideoTrack(srcCtx, mount, track, peerConnection)
 			return
 		}
 		if !strings.EqualFold(codec, webrtc.MimeTypeOpus) {

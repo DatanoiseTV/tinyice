@@ -5,6 +5,7 @@ import (
 	"io"
 	"time"
 
+	"github.com/pion/rtcp"
 	"github.com/pion/rtp/codecs"
 	"github.com/pion/webrtc/v4"
 
@@ -14,6 +15,25 @@ import (
 // rtpClockHz is the RTP clock rate for H.264, which is also the unit the
 // Frame PTS/DTS fields use — so timestamps pass through unscaled.
 const rtpClockHz = 90000
+
+// keyframeRequestInterval is how often we ask a browser publisher for a
+// fresh IDR via RTCP PLI.
+//
+// This is not an optimisation, it is a correctness requirement. A browser
+// WebRTC encoder emits exactly one keyframe when the track starts and
+// then never again unless a receiver asks: measured on Chrome 141
+// publishing a 640x480 camera, the elementary stream carried 542
+// non-IDR slices and a single SPS/PPS pair over the first eight
+// seconds, with zero type-5 IDR NALUs after the first frame. That makes
+// the stream undecodable for everyone who did not see byte zero — an
+// HLS segment cannot start on a keyframe, and a WHEP viewer joining
+// mid-broadcast has nothing to begin decoding from.
+//
+// Two seconds matches the keyframe interval OBS and every other
+// streaming encoder defaults to, and bounds a late joiner's time to
+// first picture. The cost is the extra bitrate of one intra frame every
+// two seconds, which is the same cost any RTMP publisher already pays.
+const keyframeRequestInterval = 2 * time.Second
 
 // h264Unwrapper turns the 32-bit RTP timestamp into a monotonic 90 kHz
 // value based at zero. The field wraps roughly every 13 hours at 90 kHz,
@@ -80,6 +100,40 @@ func (a *h264AccessUnit) flush() (au []byte, auTS uint32, ok bool) {
 	return au, auTS, true
 }
 
+// rtcpWriter is the slice of *webrtc.PeerConnection that the keyframe
+// requester needs, so the loop can be exercised without negotiating a
+// real peer connection.
+type rtcpWriter interface {
+	WriteRTCP([]rtcp.Packet) error
+}
+
+// requestKeyframes asks the publisher for an IDR immediately and then
+// every interval until ctx is cancelled. The first request is sent
+// before the first tick on purpose: a viewer who arrives while the
+// publisher is still sending its opening GOP should not wait a whole
+// interval for a picture.
+//
+// A write error is logged and the loop continues rather than returning.
+// WriteRTCP fails transiently while ICE is still settling, and the
+// authoritative signal that the track is gone is the pump's own read
+// loop, which cancels ctx.
+func requestKeyframes(ctx context.Context, w rtcpWriter, ssrc uint32, interval time.Duration, mount string) {
+	pli := []rtcp.Packet{&rtcp.PictureLossIndication{MediaSSRC: ssrc}}
+	tick := time.NewTicker(interval)
+	defer tick.Stop()
+	for {
+		if err := w.WriteRTCP(pli); err != nil {
+			logger.L.Debugw("WebRTC Source: keyframe request failed",
+				"mount", mount, "error", err)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-tick.C:
+		}
+	}
+}
+
 // pumpVideoTrack reads an H.264 track from a browser (or any WHIP
 // publisher) and republishes it on the mount's /video sibling in exactly
 // the shape the RTMP ingest produces: Annex-B access units broadcast to
@@ -91,7 +145,7 @@ func (a *h264AccessUnit) flush() (au []byte, auTS uint32, ok bool) {
 // codec, so a browser that cannot send H.264 fails negotiation with a
 // clear error rather than delivering VP8 that nothing downstream could
 // use without a transcoder we do not have.
-func (wm *WebRTCManager) pumpVideoTrack(ctx context.Context, mount string, track *webrtc.TrackRemote) {
+func (wm *WebRTCManager) pumpVideoTrack(ctx context.Context, mount string, track *webrtc.TrackRemote, pc *webrtc.PeerConnection) {
 	videoMount := mount + "/video"
 	// Same 8 MiB buffer the RTMP ingest uses: video frames are far
 	// larger than audio, and a keyframe-aligned burst for a late joiner
@@ -108,6 +162,13 @@ func (wm *WebRTCManager) pumpVideoTrack(ctx context.Context, mount string, track
 
 	logger.L.Infow("WebRTC Source: video track accepted",
 		"mount", videoMount, "codec", track.Codec().MimeType, "track", track.ID())
+
+	// Ask the publisher for an IDR now and on a fixed cadence for as
+	// long as the track lives. See keyframeRequestInterval for why this
+	// is mandatory rather than an optimisation. A failed WriteRTCP is
+	// not fatal — it means the peer connection is going away, and the
+	// pump's own read loop will notice that and return.
+	go requestKeyframes(ctx, pc, uint32(track.SSRC()), keyframeRequestInterval, videoMount)
 
 	defer func() {
 		logger.L.Infow("WebRTC Source: video track ended", "mount", videoMount)
