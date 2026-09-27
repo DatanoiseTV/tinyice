@@ -31,6 +31,20 @@ func (s *Server) handleHLSPlaylist(w http.ResponseWriter, r *http.Request) {
 	hls := s.getHLSOutput(mount)
 	if hls == nil {
 		hls = s.RegisterHLS(mount)
+	} else if !hls.HasVideo() {
+		// The video sub-mount can appear seconds after the audio one:
+		// an RTMP publisher only creates it on its first video tag, and
+		// a browser's H.264 encoder took 13 s to produce its first
+		// frame in testing. A viewer who hit the playlist inside that
+		// window pinned this output to audio-only for the rest of the
+		// source session, because RegisterHLS samples the sub-mount
+		// once. Swap in an A/V output as soon as the video shows up;
+		// HasVideo() is then true, so this runs at most once per source.
+		if _, hasVideo := s.Relay.GetStream(mount + "/video"); hasVideo {
+			logger.L.Infow("HLS: video sub-mount appeared, re-registering as A/V", "mount", mount)
+			s.UnregisterHLS(mount)
+			hls = s.RegisterHLS(mount)
+		}
 	}
 	if hls == nil {
 		http.NotFound(w, r)
@@ -350,6 +364,20 @@ func (s *Server) RegisterHLS(mount string) *relay.HLSOutput {
 
 	stream, ok := s.Relay.GetStream(mount)
 	if !ok {
+		return nil
+	}
+
+	// Refuse mounts whose audio the MPEG-TS muxer cannot declare. Before
+	// this check an Ogg/Opus mount (every WebRTC publisher, and any
+	// Icecast source sending Opus) got segments carrying raw Ogg pages
+	// under stream type 0x03, which ffprobe reads as "mp3float: Header
+	// missing" and Chrome reports as MEDIA_ERR_SRC_NOT_SUPPORTED /
+	// DEMUXER_ERROR_COULD_NOT_PARSE. Returning nil makes the playlist a
+	// clean 404 so the player falls back to WHEP, which carries Opus and
+	// H.264 natively with no transcode.
+	if !stream.HLSMuxableAudio() {
+		logger.L.Debugw("HLS: declining output, audio codec is not MPEG-TS muxable",
+			"mount", mount, "content_type", stream.Snapshot().ContentType)
 		return nil
 	}
 

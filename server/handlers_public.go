@@ -39,6 +39,14 @@ func (s *Server) handlePlayer(w http.ResponseWriter, r *http.Request) {
 	// mount URL and the HLS playlist.
 	_, hasVideo := s.Relay.GetStream(mount + "/video")
 	pageData["hasVideo"] = hasVideo
+	// hasHLS tells the player whether an HLS playlist for this mount can
+	// exist at all. It cannot when the audio codec is outside what the
+	// MPEG-TS muxer can declare (Opus, FLAC, Vorbis) — which is every
+	// WebRTC publisher. Without this the player attached hls.js to a
+	// playlist the server refuses to build and the browser reported
+	// MEDIA_ERR_SRC_NOT_SUPPORTED; with it the player goes straight to
+	// WHEP, which carries Opus + H.264 natively.
+	pageData["hasHLS"] = stream.HLSMuxableAudio()
 	s.shell.Render(w, "player", snap.Name+" — "+s.Config.PageTitle, pageData)
 }
 

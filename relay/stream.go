@@ -1066,3 +1066,36 @@ func (s *Stream) SetContentTypeForTest(ct string) {
 	s.ContentType = ct
 	s.mu.Unlock()
 }
+
+// HLSMuxableAudio reports whether this stream's audio codec is one the
+// MPEG-TS muxer can actually declare in a PMT. The muxer knows exactly
+// two audio stream types — 0x03 (MP3) and 0x0F (ADTS AAC) — so anything
+// else would be emitted as raw bytes under an MP3 stream type and every
+// player would reject the segment.
+//
+// The check is an allow-list rather than "not Ogg" on purpose: a FLAC or
+// Vorbis mount is just as unmuxable as an Opus one, and an allow-list
+// fails closed when a new ingest format appears. An empty ContentType
+// counts as MP3, which is the default a new Stream carries and what an
+// Icecast SOURCE that omits the header is assumed to be sending.
+//
+// Callers use this to decide whether to offer HLS for a mount at all.
+// Serving an undecodable playlist is worse than serving none: a browser
+// reports it as MEDIA_ERR_SRC_NOT_SUPPORTED with no indication of why.
+func (s *Stream) HLSMuxableAudio() bool {
+	s.mu.RLock()
+	ct := strings.ToLower(s.ContentType)
+	s.mu.RUnlock()
+	if ct == "" {
+		return true
+	}
+	// audio/mpeg, audio/mp3, audio/mpeg3 — MP3 (stream type 0x03).
+	if strings.Contains(ct, "mpeg") || strings.Contains(ct, "mp3") {
+		return true
+	}
+	// audio/aac, audio/aacp, audio/mp4a-latm — ADTS AAC (0x0F).
+	if strings.Contains(ct, "aac") || strings.Contains(ct, "mp4a") {
+		return true
+	}
+	return false
+}
