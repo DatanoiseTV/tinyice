@@ -27,6 +27,10 @@ export interface PlayerData extends TinyIceBase {
   // the player then swaps its <audio> for a <video> bound to the HLS
   // playlist so the user sees picture + audio together.
   hasVideo?: boolean
+  // hasHLS is false when the mount's audio codec cannot be muxed into
+  // MPEG-TS (Opus / FLAC / Vorbis — every WebRTC publisher). The player
+  // uses WHEP for those instead of attaching hls.js to a 404.
+  hasHLS?: boolean
 }
 
 export interface AdminData extends TinyIceBase {

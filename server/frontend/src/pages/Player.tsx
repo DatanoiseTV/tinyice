@@ -363,10 +363,23 @@ async function pickAudioSource(mountPath: string): Promise<string> {
     srcAttachedRef.current = true
     const mountPath = data.mount!.startsWith('/') ? data.mount! : `/${data.mount}`
     const wantsWebRTC = new URLSearchParams(window.location.search).get('webrtc') === '1'
-    if (wantsWebRTC) {
+    // hasHLS === false means the server will not build a playlist for
+    // this mount because its audio codec is outside MPEG-TS (Opus, from
+    // any WebRTC publisher). WHEP is then the only transport that can
+    // carry it, so try it first rather than attaching hls.js to a 404.
+    const mustUseWebRTC = data.hasHLS === false
+    if (wantsWebRTC || mustUseWebRTC) {
       const whep = await attachWHEP(mountPath, el)
       if (whep) {
         whepCleanup.current = whep
+        return
+      }
+      // WHEP is the only viable transport here, so there is nothing to
+      // fall back to. Leaving the element without a src is better than
+      // pointing it at a playlist that cannot be parsed: the overlay
+      // shows the offline state instead of a decode error.
+      if (mustUseWebRTC) {
+        srcAttachedRef.current = false
         return
       }
     }
@@ -530,7 +543,11 @@ async function pickAudioSource(mountPath: string): Promise<string> {
       if (hls && typeof hls.latency === 'number') {
         latency = hls.latency
       }
-      const transport = whepCleanup.current ? 'WebRTC' : (data.hasVideo ? 'HLS' : 'Icecast')
+      const transport = whepCleanup.current
+        ? 'WebRTC'
+        : hlsRef.current || data.hasVideo
+          ? 'HLS'
+          : 'Icecast'
       playbackStats.value = {
         bufferedSec: Math.max(0, bufferedSec),
         droppedFrames: dropped,
