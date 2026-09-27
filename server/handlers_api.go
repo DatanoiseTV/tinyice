@@ -755,12 +755,31 @@ func (s *Server) handleWebRTCOffer(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		json.NewEncoder(w).Encode(map[string]string{"error": webrtcErrorHint(err)})
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(answer)
+}
+
+// webrtcErrorHint turns pion's interface-enumeration failure into
+// something an operator can act on. Go's net.Interfaces() opens a
+// NETLINK_ROUTE socket, so a hardened systemd unit whose
+// RestrictAddressFamilies omits AF_NETLINK breaks every peer connection
+// at creation — and the resulting message ("route ip+net: netlinkrib:
+// address family not supported by protocol") names neither systemd nor
+// the directive responsible. tinyice shipped exactly that unit in
+// packaging/ and contrib/, so operators who installed the deb or rpm hit
+// it with nothing to search for.
+func webrtcErrorHint(err error) string {
+	msg := err.Error()
+	if strings.Contains(msg, "netlinkrib") || strings.Contains(msg, "address family not supported") {
+		return msg + " — the server cannot enumerate its network interfaces, " +
+			"which WebRTC needs for ICE. If tinyice runs under systemd, add " +
+			"AF_NETLINK to RestrictAddressFamilies in the unit and restart."
+	}
+	return msg
 }
 
 func (s *Server) handleWebRTCSourceOffer(w http.ResponseWriter, r *http.Request) {
@@ -854,7 +873,7 @@ func (s *Server) handleWebRTCSourceOffer(w http.ResponseWriter, r *http.Request)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		json.NewEncoder(w).Encode(map[string]string{"error": webrtcErrorHint(err)})
 		return
 	}
 
