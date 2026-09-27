@@ -5,6 +5,55 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.12.1] - 2026-09-27
+
+### Fixed
+
+- **Browser-published video would not play.** Three separate faults sat
+  on that path, each measured rather than inferred:
+  - A browser WebRTC encoder emits exactly one keyframe when its track
+    starts and then never again unless a receiver asks over RTCP.
+    Chrome 141 publishing a 640x480 camera produced 542 non-IDR slices,
+    one SPS and one PPS, and zero IDRs after the opening frame in the
+    first eight seconds. Nothing joining mid-broadcast could decode
+    that: HLS could not start a segment on a keyframe and a WHEP viewer
+    had nothing to begin from. tinyice now asks for an IDR on track
+    acceptance and every two seconds after, matching what OBS and every
+    other streaming encoder default to. The same window then carried
+    five IDRs with their parameter sets, and ffprobe reports
+    `h264 (Baseline), yuv420p, 640x480`.
+  - The MPEG-TS muxer can declare two audio stream types, MP3 and ADTS
+    AAC. An Ogg/Opus mount was segmented anyway, so segments carried
+    raw Ogg pages under the MP3 stream type — `mp3float: Header
+    missing` from ffprobe, `MEDIA_ERR_SRC_NOT_SUPPORTED` in Chrome. The
+    2.12.0 notes claimed HLS picked browser video up with no further
+    configuration; that was wrong.
+  - The player attached hls.js to every video mount, including those.
+- An HLS output registered before a mount's `/video` sibling appeared
+  stayed audio-only for the rest of the source session. The sub-mount
+  can arrive seconds late — an RTMP publisher creates it on its first
+  video tag, and Chrome's H.264 encoder took 13 s to emit its first
+  frame — so a viewer who loaded the playlist in that window lost the
+  picture. The output is now re-registered as A/V the first time the
+  sub-mount shows up.
+- The systemd units shipped in the deb and rpm packages restricted
+  address families to AF_INET, AF_INET6 and AF_UNIX. Go's
+  `net.Interfaces()` needs AF_NETLINK to enumerate addresses, so every
+  WebRTC publish attempt under those units failed with `route ip+net:
+  netlinkrib: address family not supported by protocol`. The API now
+  also explains that error where it surfaces.
+
+### Changed
+
+- Mounts whose audio codec is outside MPEG-TS — Opus, FLAC, Vorbis, and
+  so every WebRTC publisher — no longer serve an HLS playlist. The
+  request is a clean 404 and the player uses WHEP, which carries Opus
+  and H.264 natively with no transcode. These mounts previously
+  returned a playlist whose segments no player could decode. Carrying
+  Opus over HLS needs fMP4 segments or an AAC encoder, neither of which
+  exists here yet; RTMP, SRT and Icecast MP3/AAC sources are
+  unaffected.
+
 ## [2.12.0] - 2026-09-27
 
 ### Added
@@ -835,6 +884,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   this release line as `daf5368`). The previous full-lock fan-
   out was the dominant lock-contention vector under load.
 
+[2.12.1]: https://github.com/DatanoiseTV/tinyice/releases/tag/v2.12.1
 [2.12.0]: https://github.com/DatanoiseTV/tinyice/releases/tag/v2.12.0
 [2.11.1]: https://github.com/DatanoiseTV/tinyice/releases/tag/v2.11.1
 [2.11.0]: https://github.com/DatanoiseTV/tinyice/releases/tag/v2.11.0
