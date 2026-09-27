@@ -5,6 +5,26 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.11.1] - 2026-09-27
+
+### Security
+
+- **SSRF via IPv6 transition addresses (GHSA-7r38-rfcc-8x22).** The
+  outbound address policy judged IPv6 literals on the stdlib predicates
+  alone, none of which look at an embedded IPv4 — `IsLoopback` knows only
+  `::1`, `IsPrivate` only `fc00::/7`, and `net.IP.To4` decodes
+  IPv4-mapped and nothing else. A webhook or relay URL written as
+  `64:ff9b::a9fe:a9fe` (NAT64 for the cloud metadata endpoint),
+  `2002:c0a8:0101::` (6to4 for 192.168.1.1), a Teredo form of any private
+  address, or the deprecated `::127.0.0.1` reached exactly the ranges the
+  policy exists to refuse. The embedded address is now extracted and
+  judged on the same policy for IPv4-mapped, IPv4-compatible, NAT64 (RFC
+  6052 and RFC 8215 prefixes), 6to4 and Teredo. Transition addresses
+  carrying a genuinely public IPv4 still work, so a publisher reachable
+  over 6to4 is unaffected. NAT64 on a network-specific prefix cannot be
+  enumerated and remains out of reach of this check; that limit is
+  documented at the function.
+
 ## [2.11.0] - 2026-09-27
 
 ### Added
@@ -795,6 +815,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   this release line as `daf5368`). The previous full-lock fan-
   out was the dominant lock-contention vector under load.
 
+[2.11.1]: https://github.com/DatanoiseTV/tinyice/releases/tag/v2.11.1
 [2.11.0]: https://github.com/DatanoiseTV/tinyice/releases/tag/v2.11.0
 [2.10.2]: https://github.com/DatanoiseTV/tinyice/releases/tag/v2.10.2
 [2.10.1]: https://github.com/DatanoiseTV/tinyice/releases/tag/v2.10.1
