@@ -5,6 +5,26 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.12.0] - 2026-09-27
+
+### Added
+
+- **Browser video broadcasting.** Go Live could only send a microphone,
+  and the WebRTC ingest path declined every non-Opus track, so a browser
+  had no way to contribute video while RTMP and SRT sources could. The
+  page now offers four sources — microphone, camera, screen share, or a
+  local video file — and publishes audio plus video over one peer
+  connection. Video is republished on the mount's `/video` sibling in
+  the same shape the RTMP ingest produces, so HLS, the player and WHEP
+  pick it up with no further configuration. A screencast mixes the
+  microphone in so it can be narrated; a video file loops while live.
+- The ingest codec set is restricted to Opus and H.264 on purpose.
+  pion's defaults also offer VP8 and VP9 and a browser will choose VP8
+  given the option, but every video consumer here is H.264 and the
+  binary has no video transcoder — accepting VP8 would mean taking a
+  publisher whose picture nothing could play. A browser that cannot
+  encode H.264 fails negotiation with a clear message instead.
+
 ## [2.11.1] - 2026-09-27
 
 ### Security
@@ -815,6 +835,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   this release line as `daf5368`). The previous full-lock fan-
   out was the dominant lock-contention vector under load.
 
+[2.12.0]: https://github.com/DatanoiseTV/tinyice/releases/tag/v2.12.0
 [2.11.1]: https://github.com/DatanoiseTV/tinyice/releases/tag/v2.11.1
 [2.11.0]: https://github.com/DatanoiseTV/tinyice/releases/tag/v2.11.0
 [2.10.2]: https://github.com/DatanoiseTV/tinyice/releases/tag/v2.10.2
