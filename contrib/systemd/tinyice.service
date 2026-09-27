@@ -38,7 +38,14 @@ PrivateDevices=yes
 ProtectKernelTunables=yes
 ProtectKernelModules=yes
 ProtectControlGroups=yes
-RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+# AF_NETLINK is required: Go's net.Interfaces() opens a NETLINK_ROUTE
+# socket to enumerate interfaces, and WebRTC (Go Live publishing and WHEP
+# playback) needs that for ICE candidate gathering. Without it every peer
+# connection fails at creation with
+#   failed to create network: route ip+net: netlinkrib: address family
+#   not supported by protocol
+# which names neither systemd nor this directive.
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
 LockPersonality=yes
 RestrictRealtime=yes
 RestrictSUIDSGID=yes
