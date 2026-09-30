@@ -5,6 +5,43 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.12.2] - 2026-09-30
+
+### Fixed
+
+- **An AutoDJ mount with no listeners burned a full CPU core.** Measured
+  on the production r4dio instance: 207% CPU and 1d10h of CPU time in
+  16h of uptime, serving two listeners. A 20 s profile put ~90% of
+  samples inside go-mp3 frame decoding with only 27 goroutines alive, so
+  it was one free-running loop per mount rather than a leak or a retry
+  storm.
+
+  Both encoders skip encoding while a mount has no listeners, but that
+  gate was a bare `continue` over the rest of the loop body — including
+  the pacing sleep at the bottom. The read above it still pulled PCM,
+  which is what runs the MP3 decoder, so the gate skipped the cheap half
+  and left the expensive half unbounded. On a file-backed source the
+  sleep is the only thing tying playback to the clock, so an idle mount
+  decoded its entire playlist as fast as the CPU allowed. Live sources
+  pace themselves, which is why only the AutoDJ path showed it.
+
+  Measured on two idle AutoDJ mounts before and after, same machine and
+  fixtures: 232% CPU before, 3.5% after. A listener pulling for 20 s
+  receives 20.01 s of 128 kbps MP3 and 19.98 s of Ogg Opus, so pacing is
+  accurate rather than merely slower.
+- The frame counter that drives pacing now advances on idle frames too.
+  It counted only encoded frames, so after any idle stretch `expected`
+  sat permanently behind `elapsed` and pacing never re-engaged for the
+  rest of the track once a listener arrived.
+- An idle mount now marks its producer alive. Stream health is derived
+  from the last time bytes were broadcast, so a correctly-paced idle
+  mount would emit nothing for minutes, flap to `degraded` after 5 s and
+  eventually be auto-removed as a dead stream — the mount would vanish
+  from the dashboard and 404 the first listener to tune in. The old bug
+  masked this by restarting tracks constantly, each restart writing Ogg
+  headers, which is the healthy/degraded flapping seen on both AutoDJ
+  mounts (200 health log lines in 6 minutes).
+
 ## [2.12.1] - 2026-09-27
 
 ### Fixed
@@ -884,6 +921,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   this release line as `daf5368`). The previous full-lock fan-
   out was the dominant lock-contention vector under load.
 
+[2.12.2]: https://github.com/DatanoiseTV/tinyice/releases/tag/v2.12.2
 [2.12.1]: https://github.com/DatanoiseTV/tinyice/releases/tag/v2.12.1
 [2.12.0]: https://github.com/DatanoiseTV/tinyice/releases/tag/v2.12.0
 [2.11.1]: https://github.com/DatanoiseTV/tinyice/releases/tag/v2.11.1
