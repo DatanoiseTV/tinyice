@@ -5,6 +5,24 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.12.3] - 2026-09-30
+
+### Fixed
+
+- **An AutoDJ playlist whose files have all become unreadable span the
+  streamer loop at full speed.** Found by sweeping for the bug class
+  behind 2.12.2: every `continue` in the streamer loop bypasses the only
+  sleeps it has, and the invalid-file skip was one of them. When the
+  music directory is unmounted, a network share drops, or permissions
+  change, the loop stats files as fast as it can and logs one warning
+  each — measured at 1,108,734 skips in 1.5 s, about 739k log lines per
+  second, and with `loop` enabled it never ends on its own.
+
+  Skipping now backs off once a full pass has failed end to end, so a
+  few dead entries still skip at full speed while a wholly unplayable
+  playlist retries at 1 Hz until the files return. Measured after the
+  fix: 6 skips in 1.5 s for a three-file playlist.
+
 ## [2.12.2] - 2026-09-30
 
 ### Fixed
@@ -921,6 +939,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   this release line as `daf5368`). The previous full-lock fan-
   out was the dominant lock-contention vector under load.
 
+[2.12.3]: https://github.com/DatanoiseTV/tinyice/releases/tag/v2.12.3
 [2.12.2]: https://github.com/DatanoiseTV/tinyice/releases/tag/v2.12.2
 [2.12.1]: https://github.com/DatanoiseTV/tinyice/releases/tag/v2.12.1
 [2.12.0]: https://github.com/DatanoiseTV/tinyice/releases/tag/v2.12.0
