@@ -1197,6 +1197,10 @@ func (s *Streamer) MovePlaylistItem(from, to int) {
 func (sm *StreamerManager) runStreamerLoop(ctx context.Context, s *Streamer) {
 	logger.L.Infof("Streamer %s starting for mount %s", s.Name, s.OutputMount)
 
+	// Counts files rejected by validateAudioFile since the last one that
+	// played. Drives the backoff below; see the comment there.
+	consecutiveInvalid := 0
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -1298,8 +1302,31 @@ func (sm *StreamerManager) runStreamerLoop(ctx context.Context, s *Streamer) {
 
 			if err := validateAudioFile(filePath); err != nil {
 				logger.L.Warnf("Streamer %s: Skipping invalid file %s: %v", s.Name, filePath, err)
+				// Skipping is deliberately cheap so a handful of dead
+				// entries don't stall the playlist. But every `continue`
+				// in this loop bypasses the only sleeps it has, so a
+				// playlist whose files have ALL become unreadable (music
+				// dir unmounted, share offline, permissions changed)
+				// spins as fast as validateAudioFile can stat, burning a
+				// core and flooding the log with one warning per file.
+				// Loop=true means that never ends on its own.
+				//
+				// Back off once a full pass has failed end to end: a few
+				// bad files still skip at full speed, while a wholly
+				// unplayable playlist retries at 1 Hz until the files
+				// come back.
+				consecutiveInvalid++
+				if consecutiveInvalid >= playlistLen(s) {
+					consecutiveInvalid = 0
+					select {
+					case <-ctx.Done():
+						return
+					case <-time.After(1 * time.Second):
+					}
+				}
 				continue
 			}
+			consecutiveInvalid = 0
 
 			// Create a per-file context for skipping
 			fileCtx, fileCancel := context.WithCancel(ctx)
@@ -1618,4 +1645,19 @@ func (s *Streamer) SetInjectMetadata(on bool) {
 	s.mu.Lock()
 	s.InjectMetadata = on
 	s.mu.Unlock()
+}
+
+// playlistLen returns the streamer's playlist length under its mutex,
+// floored at 1 so callers can use it as a divisor or a retry threshold
+// without a zero-length special case. A queue-fed or song-command
+// streamer has no playlist, and one bad file from either of those should
+// still back off rather than spin.
+func playlistLen(s *Streamer) int {
+	s.mu.RLock()
+	n := len(s.Playlist)
+	s.mu.RUnlock()
+	if n < 1 {
+		return 1
+	}
+	return n
 }
