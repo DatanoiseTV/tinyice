@@ -1099,3 +1099,22 @@ func (s *Stream) HLSMuxableAudio() bool {
 	}
 	return false
 }
+
+// MarkProducerAlive refreshes the stream's liveness timestamp without
+// recording any bytes. It exists for producers that are running on
+// schedule but deliberately emitting nothing — the encoders' idle gate,
+// which skips encoding while a mount has no listeners.
+//
+// Health is derived from LastDataReceived, and Broadcast is the only
+// other thing that sets it. Without this call an idle AutoDJ mount looks
+// silent to the HealthMonitor: it flaps to "degraded" after 5 s and is
+// auto-removed once past the dead timeout, so the mount disappears from
+// the dashboard and 404s the first listener who tries to tune in. The
+// producer is genuinely alive in that state, so saying so is accurate
+// rather than a papered-over health check — a mount whose encoder has
+// actually stopped still goes stale, because nothing calls this.
+func (s *Stream) MarkProducerAlive() {
+	s.mu.Lock()
+	s.LastDataReceived = time.Now()
+	s.mu.Unlock()
+}

@@ -389,38 +389,58 @@ func EncodeMP3(ctx context.Context, relay *Relay, output *Stream, decoder io.Rea
 				return
 			}
 
+			// Account for this frame before anything can skip ahead.
+			// Pacing is driven by how much audio we have CONSUMED, not
+			// by how much we encoded, so the counter has to advance on
+			// idle frames too — otherwise `expected` falls permanently
+			// behind `elapsed` and pacing never re-engages for the rest
+			// of the track once a listener arrives.
+			if pace {
+				totalSamples += int64(n / 4) // 2 channels, 2 bytes per sample
+			}
+
 			// Idle gate — when the output mount has no listeners, skip
 			// the encode + broadcast. Decoder still drains so the
 			// upstream input buffer doesn't overrun us; encoder side
 			// CPU is the dominant cost so this is the lever. The
 			// encoder's bit-reservoir state may produce one suboptimal
 			// frame on the next listener join, which is inaudible.
+			//
+			// This skips the encode ONLY. It must never skip the pacing
+			// sleep below: on a file-backed source (AutoDJ) the sleep is
+			// the only thing tying playback to real time, and a bare
+			// `continue` here made an idle mount decode its whole
+			// playlist as fast as the CPU allowed. Measured on r4dio
+			// 2026-09-30: two idle AutoDJ mounts burned 207% CPU, ~90%
+			// of it inside go-mp3, with only 27 goroutines alive.
 			if output.ListenersCount() == 0 {
-				continue
-			}
+				// Producer is alive and on schedule, just not emitting.
+				// Keep the mount out of the HealthMonitor's dead-stream
+				// sweep; see Stream.MarkProducerAlive.
+				output.MarkProducerAlive()
+			} else {
+				// Convert PCM bytes to int16 for Shine
+				for i := 0; i < n/2; i++ {
+					samples[i] = int16(pcmBuf[i*2]) | int16(pcmBuf[i*2+1])<<8
+				}
 
-			// Convert PCM bytes to int16 for Shine
-			for i := 0; i < n/2; i++ {
-				samples[i] = int16(pcmBuf[i*2]) | int16(pcmBuf[i*2+1])<<8
-			}
-
-			// Feed the frame to the encoder directly rather than through
-			// shine's Encoder.Write: as of v0.2.0 that slices each chunk
-			// as data[i:i+samplesPerPass] while stepping by
-			// samplesPerPass*channels, so for stereo it encodes only the
-			// first half of every frame (zero-padded) and drops the rest,
-			// which is the distortion reported in #63. pcmBuf is exactly
-			// one frame (1152 stereo samples), which is what
-			// EncodeBufferInterleaved expects.
-			frame, written := encoder.EncodeBufferInterleaved(samples[:n/2])
-			if written > 0 {
-				if _, err := writer.Write(frame[:written]); err != nil {
-					return
+				// Feed the frame to the encoder directly rather than through
+				// shine's Encoder.Write: as of v0.2.0 that slices each chunk
+				// as data[i:i+samplesPerPass] while stepping by
+				// samplesPerPass*channels, so for stereo it encodes only the
+				// first half of every frame (zero-padded) and drops the rest,
+				// which is the distortion reported in #63. pcmBuf is exactly
+				// one frame (1152 stereo samples), which is what
+				// EncodeBufferInterleaved expects.
+				frame, written := encoder.EncodeBufferInterleaved(samples[:n/2])
+				if written > 0 {
+					if _, err := writer.Write(frame[:written]); err != nil {
+						return
+					}
 				}
 			}
 
 			if pace {
-				totalSamples += int64(n / 4) // 2 channels, 2 bytes per sample
 				elapsed := activeElapsed(startTime, decoder)
 				expected := time.Duration(totalSamples) * time.Second / time.Duration(sampleRate)
 				if expected > elapsed {
@@ -505,31 +525,33 @@ func EncodeOpus(ctx context.Context, relay *Relay, output *Stream, decoder io.Re
 				return
 			}
 
-			// Idle gate — see EncodeMP3 for rationale. Saves the bulk
-			// of the per-frame work when no one's listening on the
-			// output mount.
+			// Frame accounting first — see EncodeMP3 for why this must
+			// not sit behind the idle gate.
+			sentCount++
+
+			// Idle gate — see EncodeMP3 for rationale, including why it
+			// guards the encode only and never the pacing sleep.
 			if output.ListenersCount() == 0 {
-				continue
-			}
+				output.MarkProducerAlive()
+			} else {
+				for i := 0; i < len(pcmSamples); i++ {
+					pcmSamples[i] = int16(pcmBuf[i*2]) | int16(pcmBuf[i*2+1])<<8
+				}
 
-			for i := 0; i < len(pcmSamples); i++ {
-				pcmSamples[i] = int16(pcmBuf[i*2]) | int16(pcmBuf[i*2+1])<<8
-			}
+				en, eerr := enc.Encode(pcmSamples, frameSize, opusPacket)
+				if eerr != nil {
+					logger.L.Errorf("Opus encode error: %v", eerr)
+					return
+				}
 
-			en, eerr := enc.Encode(pcmSamples, frameSize, opusPacket)
-			if eerr != nil {
-				logger.L.Errorf("Opus encode error: %v", eerr)
-				return
+				granulePos += uint64(frameSize)
+				if err := pw.WritePacket(opusPacket[:en], granulePos, false, false); err != nil {
+					return
+				}
+				pw.Flush()
 			}
-
-			granulePos += uint64(frameSize)
-			if err := pw.WritePacket(opusPacket[:en], granulePos, false, false); err != nil {
-				return
-			}
-			pw.Flush()
 
 			if pace {
-				sentCount++
 				elapsed := activeElapsed(startTime, decoder)
 				expected := time.Duration(sentCount*int64(frameMS)) * time.Millisecond
 				if expected > elapsed {
