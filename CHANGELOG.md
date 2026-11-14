@@ -5,6 +5,57 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **A new web interface.** Every page was rebuilt on React 19, Tailwind 4 and
+  Radix primitives with an in-house icon set and console-style widgets (panels
+  with etched legends, tally lamps, a rotary volume knob, timecode readouts,
+  level meters). Dark and light themes; the operator's accent colour is
+  applied with a label colour chosen for contrast. Phone layouts for every page.
+- **Guided first-run wizard.** `/setup` now asks for the station name and
+  tagline, address, accent colour (with a live preview and contrast check),
+  expected audience, first mount and admin account, then applies them in one
+  request and shows the generated source passwords once, with ready-to-paste
+  encoder settings. A quick path (token and account only) remains.
+  `POST /setup/complete` accepts optional `station`, `address`, `appearance`,
+  `audience` and `mount` groups, validates all of them before storing anything,
+  and reports which groups were stored.
+- **Listener limit presets** in Settings (25 to 1000, unlimited, or a custom
+  number) with a bandwidth estimate. Settings are grouped by task with search,
+  per-setting defaults and reset.
+- **Add relay** no longer asks for a byte count. It offers three listener
+  experiences (Balanced, Smooth, Live as it happens) with the trade-off
+  explained, and shows whether the relay connected.
+- Command palette (Ctrl or Cmd+K), an ON AIR lamp in the sidebar while a
+  browser broadcast runs, browser broadcast pre-flight with stereo meters,
+  dashboard audience map.
+
+### Changed
+
+- The web UI is set in IBM Plex Sans (Inter drew capital I and lowercase l
+  alike, so "TinyIce" read as "Tinylce").
+- `POST /setup/complete` requires a password of at least 8 characters and
+  rejects mount names that the router owns (`/admin`, `/api`, ...).
+- The landing page no longer sends the current track to MusicBrainz.
+
+### Fixed
+
+- **A listener limit of "unlimited" (0) did not survive a restart**: it was
+  stored as 0 and the config loader turned that back into 100. It is now stored
+  as a negative value; a legacy 0 in an existing config file still means the
+  default of 100. `PUT /api/settings` rejects values that are not whole numbers
+  from 0 to 1,000,000 with a 400 and applies nothing.
+- A relay created without `burst_size` stored 20 bytes (effectively no burst).
+  The default is now 65536, and negative or oversized values are rejected.
+- Completing setup left a hidden placeholder superadmin (`admin`, empty
+  password hash) next to the operator's account. It cannot sign in, but it no
+  longer exists.
+- The public station list ignored the server's `null` frame, so an idle server
+  showed "Reconnecting" forever and a station that went off air stayed listed.
+  Placeholder metadata ("N/A", "Unnamed Stream") is no longer shown as content.
+
 ## [2.12.3] - 2026-09-30
 
 ### Fixed

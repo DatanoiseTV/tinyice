@@ -6,7 +6,7 @@
 **TinyIce** is a modern, standalone audio streaming server compatible with the Icecast protocol.
 *   **Goal:** Provide a "single binary" radio station solution (Server + AutoDJ + Transcoder + SSL).
 *   **Philosophy:** Minimal external dependencies (Pure Go preferred), zero-allocation broadcasting paths, and high concurrency.
-*   **Aesthetic:** Professional, dark-mode "Cyberpunk/Studio" interfaces using vanilla HTML/CSS/JS (no heavy frontend frameworks).
+*   **Aesthetic:** A flat, broadcast-console look in dark and light themes: etched mono legends, tally lamps, tabular numerals. React and Tailwind, built to static assets and embedded in the binary (design rules in `server/frontend/DESIGN.md`).
 
 ## 2. Core Subsystems
 

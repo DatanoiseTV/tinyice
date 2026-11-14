@@ -204,9 +204,12 @@ make quick       # Go-only (reuse existing dist/)
 make dev         # Vite frontend dev server (hot reload)
 ```
 
-Frontend is **Preact + @preact/signals + Vite** in `server/frontend/src/`; all
-dist assets are embedded into the Go binary via `go:embed`, so the released
-binary is self-contained. See
+Frontend is **React 19 + Tailwind 4 + Radix primitives + Vite** in
+`server/frontend/src/`, with its own icon set and widgets. `make dev` serves it
+at http://localhost:5199 against built-in fixtures (no server or login needed;
+`MOCK=0 make dev` proxies to a real server on :8000). The design rules are in
+`server/frontend/DESIGN.md`. All dist assets are embedded into the Go binary via
+`go:embed`, so the released binary is self-contained. See
 **[Developing](https://github.com/DatanoiseTV/tinyice/wiki/Developing)** and
 **[Architecture](https://github.com/DatanoiseTV/tinyice/wiki/Architecture)**.
 

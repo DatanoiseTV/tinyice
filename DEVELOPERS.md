@@ -6,7 +6,7 @@ Welcome to the TinyIce codebase! This document provides an architectural overvie
 
 - **Language**: Go 1.21+
 - **Database**: SQLite (via `modernc.org/sqlite` pure-Go driver) for persistent song history.
-- **Frontend**: Vanilla JavaScript + HTML5 Templates (embedded via `embed.FS`).
+- **Frontend**: React 19, Tailwind 4 and Radix primitives, built with Vite into `server/frontend/dist` and embedded via `embed.FS` (see `server/frontend/DESIGN.md`).
 - **Real-time**: Server-Sent Events (SSE) for dashboard metrics.
 - **Security**: Argon2/Bcrypt for password hashing, TLS via ACME (autocert).
 
