@@ -116,6 +116,15 @@ func (s *Server) handleSetupComplete(w http.ResponseWriter, r *http.Request) {
 	s.Config.AdminPassword = hashed
 	s.Config.SetupComplete = true
 	s.Config.LockMaps()
+	// Starting in setup mode runs the config migration, which creates a
+	// placeholder superadmin ("admin") with an empty password hash. Nothing real
+	// exists before setup, so drop every such placeholder: the operator's
+	// account must be the only one left, not a hidden one next to it.
+	for name, u := range s.Config.Users {
+		if u == nil || u.Password == "" {
+			delete(s.Config.Users, name)
+		}
+	}
 	s.Config.Users[req.Username] = &config.User{
 		Username: req.Username,
 		Password: hashed,

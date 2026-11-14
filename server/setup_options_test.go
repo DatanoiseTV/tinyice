@@ -189,3 +189,23 @@ func TestSetupCompleteEnforcesPasswordLength(t *testing.T) {
 	}
 	untouched(t, s, "short password")
 }
+
+// First start in setup mode leaves a placeholder superadmin with an empty
+// password hash. After setup the operator's account must be the only one.
+func TestSetupCompleteRemovesPlaceholderAdmin(t *testing.T) {
+	s := newSetupServer(t)
+	s.Config.Users["admin"] = &config.User{Username: "admin", Password: "", Role: config.RoleSuperAdmin}
+	w, _ := complete(t, s, "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", w.Code, w.Body.String())
+	}
+	if _, left := s.Config.Users["admin"]; left {
+		t.Fatal("placeholder admin with an empty password survived setup")
+	}
+	if u := s.Config.Users["owner"]; u == nil || u.Password == "" || u.Role != config.RoleSuperAdmin {
+		t.Fatalf("operator account missing or unusable: %+v", u)
+	}
+	if len(s.Config.Users) != 1 {
+		t.Fatalf("%d users after setup, want exactly 1", len(s.Config.Users))
+	}
+}
