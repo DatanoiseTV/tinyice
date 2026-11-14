@@ -1,5 +1,5 @@
 import type { StatsEvent, StreamEvent, AutoDJEvent } from '../types'
-import type { GeoCity } from '../components/LiveGeoMap'
+import type { GeoCity } from '../types'
 import { redirectToLogin } from './api'
 
 // EventSource doesn't surface HTTP status codes — onerror just fires

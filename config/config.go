@@ -407,6 +407,32 @@ func CheckPasswordHash(password, hash string) bool {
 	return err == nil
 }
 
+// Listener limit bounds. The limit is per stream and applies to direct HTTP
+// stream connections (see server/handlers_stream.go).
+const (
+	DefaultMaxListeners   = 100
+	MaxListenersUnlimited = -1
+	MaxListenersCeiling   = 1000000
+)
+
+// MaxListenersForAPI converts the stored value to the client-facing one,
+// where 0 means unlimited.
+func (c *Config) MaxListenersForAPI() int {
+	if c.MaxListeners < 0 {
+		return 0
+	}
+	return c.MaxListeners
+}
+
+// SetMaxListenersFromAPI stores a client-facing value (0 = unlimited).
+func (c *Config) SetMaxListenersFromAPI(n int) {
+	if n == 0 {
+		c.MaxListeners = MaxListenersUnlimited
+		return
+	}
+	c.MaxListeners = n
+}
+
 func LoadConfig(path string) (*Config, error) {
 	file, err := os.Open(path)
 	if err != nil {
@@ -443,8 +469,13 @@ func (config *Config) setBasicDefaults() {
 	if config.AdminUser == "" {
 		config.AdminUser = "admin"
 	}
+	// 0 is the legacy "never configured" value (older versions wrote it on first
+	// run), so it still means the default. "Unlimited" is stored as
+	// MaxListenersUnlimited (negative), which the enforcement check
+	// `MaxListeners > 0 && count >= MaxListeners` already treats as no limit.
+	// Storing 0 for unlimited would silently turn back into 100 on restart.
 	if config.MaxListeners == 0 {
-		config.MaxListeners = 100
+		config.MaxListeners = DefaultMaxListeners
 	}
 	if config.PageTitle == "" {
 		config.PageTitle = "TinyIce"

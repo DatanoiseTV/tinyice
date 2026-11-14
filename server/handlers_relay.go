@@ -11,6 +11,11 @@ import (
 	"github.com/DatanoiseTV/tinyice/relay"
 )
 
+// defaultRelayBurst is what a relay gets when the client does not choose one:
+// about 4 seconds of a 128 kbps stream, so listeners start quickly and ride out
+// short hiccups. The previous default of 20 bytes meant "no burst at all".
+const defaultRelayBurst = 64 * 1024
+
 func (s *Server) handleAddRelay(w http.ResponseWriter, r *http.Request) {
 	if !s.isCSRFSafe(r) {
 		http.Error(w, "Forbidden", http.StatusForbidden)
@@ -27,7 +32,7 @@ func (s *Server) handleAddRelay(w http.ResponseWriter, r *http.Request) {
 			if m[0] != '/' {
 				m = "/" + m
 			}
-			burst := 20
+			burst := defaultRelayBurst
 			fmt.Sscanf(bs, "%d", &burst)
 
 			found := false

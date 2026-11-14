@@ -1,31 +1,28 @@
-import { signal } from '@preact/signals'
+import { useSyncExternalStore } from 'react'
 
-export type Toast = {
-  id: number
-  kind: 'error' | 'info' | 'success'
-  message: string
-}
+export type ToastKind = 'success' | 'error' | 'info'
+export interface ToastItem { id: number; kind: ToastKind; message: string }
 
-export const toasts = signal<Toast[]>([])
-
+let items: ToastItem[] = []
 let nextId = 1
+const subs = new Set<() => void>()
+const emit = () => subs.forEach((f) => f())
 
-export function showToast(kind: Toast['kind'], message: string, timeoutMs = 5000) {
+function push(kind: ToastKind, message: string) {
   const id = nextId++
-  toasts.value = [...toasts.value, { id, kind, message }]
-  if (timeoutMs > 0) {
-    setTimeout(() => dismissToast(id), timeoutMs)
-  }
-  return id
+  items = [...items, { id, kind, message }].slice(-4)
+  emit()
+  setTimeout(() => dismiss(id), kind === 'error' ? 7000 : 3500)
 }
-
-export function dismissToast(id: number) {
-  toasts.value = toasts.value.filter((t) => t.id !== id)
+export function dismiss(id: number) {
+  items = items.filter((t) => t.id !== id)
+  emit()
 }
-
-export function reportError(e: unknown, fallback = 'Request failed'): void {
-  const msg = e instanceof Error && e.message ? e.message : fallback
-  showToast('error', msg)
-  // eslint-disable-next-line no-console
-  console.error(e)
+export const toast = {
+  success: (m: string) => push('success', m),
+  error: (m: string) => push('error', m),
+  info: (m: string) => push('info', m),
+}
+export function useToasts(): ToastItem[] {
+  return useSyncExternalStore((cb) => { subs.add(cb); return () => subs.delete(cb) }, () => items)
 }

@@ -1,5 +1,7 @@
-import '../globals.css'
-import { render } from 'preact'
-import { Landing } from '@/pages/Landing'
+import '../styles/globals.css'
+import { createRoot } from 'react-dom/client'
+import { initTheme } from '@/lib/theme'
+import { App } from '@/pages/public/landing'
 
-render(<Landing />, document.getElementById('app')!)
+initTheme()
+createRoot(document.getElementById('app')!).render(<App />)

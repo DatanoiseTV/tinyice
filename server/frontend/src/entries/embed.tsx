@@ -1,5 +1,7 @@
-import '../globals.css'
-import { render } from 'preact'
-import { Embed } from '@/pages/Embed'
+import '../styles/globals.css'
+import { createRoot } from 'react-dom/client'
+import { initTheme } from '@/lib/theme'
+import { Embed } from '@/pages/public/embed'
 
-render(<Embed />, document.getElementById('app')!)
+initTheme()
+createRoot(document.getElementById('app')!).render(<Embed />)

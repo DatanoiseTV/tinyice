@@ -39,7 +39,9 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     throw new Error(err.error || res.statusText)
   }
   if (res.status === 204) return undefined as T
-  return res.json()
+  // Several endpoints answer 200 with an empty body (playlist/save, metadata, ...).
+  const text = await res.text()
+  return (text ? JSON.parse(text) : undefined) as T
 }
 
 export const api = {
@@ -47,4 +49,31 @@ export const api = {
   post: <T>(path: string, body?: unknown) => request<T>('POST', path, body),
   put: <T>(path: string, body?: unknown) => request<T>('PUT', path, body),
   del: <T>(path: string) => request<T>('DELETE', path),
+}
+
+/** Page data injected by the Go ShellRenderer (window.__TINYICE__). */
+export function page<T = import('../types').AdminData>(): T {
+  return window.__TINYICE__ as unknown as T
+}
+
+/**
+ * Legacy /admin/* mutation endpoints are form-style and CSRF-checked
+ * (server/auth.go isCSRFSafe). They accept the token as the `csrf` form
+ * field or the X-CSRF-Token header; JSON endpoints under /api need neither.
+ */
+export async function adminPost(path: string, fields: Record<string, string | number | boolean> = {}): Promise<Response> {
+  const body = new URLSearchParams()
+  for (const [k, v] of Object.entries(fields)) body.set(k, String(v))
+  const res = await fetch(path, {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRF-Token': page().csrfToken },
+    body,
+  })
+  if (res.status === 401) {
+    redirectToLogin()
+    throw new Error('Unauthorized')
+  }
+  if (!res.ok) throw new Error((await res.text().catch(() => '')) || res.statusText)
+  return res
 }

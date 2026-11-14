@@ -165,6 +165,16 @@ export interface FileInfo {
   is_pls: boolean
 }
 
+export type GeoCity = {
+  iso: string
+  country?: string
+  city?: string
+  lat: number
+  lon: number
+  listeners: number
+  mounts?: Record<string, number>
+}
+
 declare global {
   interface Window {
     __TINYICE__: TinyIceBase | PlayerData | AdminData | LandingData

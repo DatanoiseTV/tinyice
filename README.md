@@ -22,31 +22,53 @@ control, and a built-in admin SPA. Deploy anywhere in seconds.
 
 ## Screenshots
 
+Dark and light themes, phone layouts for every page.
+
 <table>
   <tr>
     <td width="50%" align="center">
       <a href="assets/screenshots/landing.png"><img src="assets/screenshots/landing.png" width="100%" alt="Landing page" /></a>
-      <sub>Landing</sub>
+      <sub>Station page, live and updating</sub>
     </td>
     <td width="50%" align="center">
       <a href="assets/screenshots/admin-dashboard.png"><img src="assets/screenshots/admin-dashboard.png" width="100%" alt="Admin dashboard" /></a>
-      <sub>Admin dashboard</sub>
+      <sub>Dashboard: live listeners, bandwidth and audience map</sub>
     </td>
   </tr>
   <tr>
     <td width="50%" align="center">
-      <a href="assets/screenshots/admin-autodj.png"><img src="assets/screenshots/admin-autodj.png" width="100%" alt="AutoDJ" /></a>
-      <sub>AutoDJ</sub>
+      <a href="assets/screenshots/admin-streams.png"><img src="assets/screenshots/admin-streams.png" width="100%" alt="Streams" /></a>
+      <sub>Every mount with live sparklines and health</sub>
     </td>
     <td width="50%" align="center">
-      <a href="assets/screenshots/developers.png"><img src="assets/screenshots/developers.png" width="100%" alt="Developer portal" /></a>
-      <sub>Developer portal</sub>
+      <a href="assets/screenshots/admin-autodj.png"><img src="assets/screenshots/admin-autodj.png" width="100%" alt="AutoDJ" /></a>
+      <sub>AutoDJ decks</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center">
+      <a href="assets/screenshots/admin-settings.png"><img src="assets/screenshots/admin-settings.png" width="100%" alt="Settings" /></a>
+      <sub>Settings grouped by task, with a listener limit per stream</sub>
+    </td>
+    <td width="50%" align="center">
+      <a href="assets/screenshots/admin-add-relay.png"><img src="assets/screenshots/admin-add-relay.png" width="100%" alt="Add relay" /></a>
+      <sub>Add relay without a byte count: pick how listeners should experience it</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center">
+      <a href="assets/screenshots/setup.png"><img src="assets/screenshots/setup.png" width="100%" alt="First-run wizard" /></a>
+      <sub>Guided first-run setup</sub>
+    </td>
+    <td width="50%" align="center">
+      <a href="assets/screenshots/player.png"><img src="assets/screenshots/player.png" width="100%" alt="Listener player" /></a>
+      <sub>Listener player</sub>
     </td>
   </tr>
   <tr>
     <td colspan="2" align="center">
-      <img src="https://github.com/user-attachments/assets/243914ac-edb5-472c-aba7-699af987da9f" width="75%" alt="Video Stream player" />
-      <br /><sub>Video stream player</sub>
+      <a href="assets/screenshots/developers.png"><img src="assets/screenshots/developers.png" width="75%" alt="Developer portal" /></a>
+      <br /><sub>Developer portal with examples filled in for your server</sub>
     </td>
   </tr>
 </table>
@@ -64,6 +86,7 @@ control, and a built-in admin SPA. Deploy anywhere in seconds.
 | **AutoDJ** | Multi-instance, keyframe-accurate pacing, shuffle/loop/queue, MPD protocol per instance, external track hooks |
 | **Auth** | Username + bcrypt · Passkeys (WebAuthn) · OIDC/OAuth2 · Bearer API tokens · per-mount source passwords |
 | **Player** | 16:9 video layout · live poster thumbnails · stats overlay (codec/res/fps/GOP/bitrate, dropped frames, buffer, latency) · 60 s DVR seek |
+| **Admin UI** | Dark and light console UI · command palette (Ctrl/Cmd+K) · guided first-run setup · browser broadcasting with level meters and limiter · live audience map · phone layouts |
 | **Ops** | Prometheus metrics · structured logging · ACME auto-HTTPS · zero-downtime hot-swap · multi-arch Docker on GHCR |
 | **Deploy** | One static Go binary (~25 MB), all assets embedded · multi-arch Docker image · `.deb` / `.rpm` packages |
 
@@ -78,7 +101,8 @@ control, and a built-in admin SPA. Deploy anywhere in seconds.
   required**.
 - **Icecast-compatible, not Icecast-bound.** Existing encoders and players keep
   working; HLS and WebRTC are layered on top for modern clients.
-- **Secure defaults.** Credentials are generated on first run, mutating admin
+- **Secure defaults.** A token-protected first-run wizard creates the admin
+  account and generates the source passwords (shown once), mutating admin
   actions are CSRF-protected, outbound webhook/relay URLs are SSRF-guarded, and
   the packaged systemd unit ships masked so an unconfigured daemon can't
   auto-start.
@@ -107,16 +131,25 @@ git clone https://github.com/DatanoiseTV/tinyice.git && cd tinyice && make build
 
 ### 2. First run
 
-On first start TinyIce prints generated credentials **once** — save them:
+With no config file, TinyIce starts in setup mode and prints a one-time token:
 
 ```
-FIRST RUN: SECURE CREDENTIALS GENERATED
-  Admin Password:           Oy9…
-  Default Source Password:  Rm3…
-  Live Mount Password:      8fX…
+FIRST RUN: SETUP MODE
+  Open your browser and navigate to:
+    http://localhost:8000/setup
+  Setup Token: 3f9a…
 ```
 
-Then open **http://localhost:8000** (and `/admin` to log in as `admin`).
+Open **/setup** and paste the token (with Docker, find it in `docker logs <container>`).
+The wizard asks, in plain language, for your station name and tagline, the
+address listeners will use, an accent colour (with a live preview and contrast
+check), the expected audience (sets the listener limit per stream), the first
+mount, and the admin account. Everything is applied in one step and nothing is
+stored if an answer is invalid. Prefer defaults? Choose **Quick setup**: token
+and admin account only.
+
+The last screen shows the generated source passwords **once**, with
+ready-to-paste encoder settings for your mount. Then sign in at **/admin**.
 
 ### 3. Stream
 
@@ -204,9 +237,12 @@ make quick       # Go-only (reuse existing dist/)
 make dev         # Vite frontend dev server (hot reload)
 ```
 
-Frontend is **Preact + @preact/signals + Vite** in `server/frontend/src/`; all
-dist assets are embedded into the Go binary via `go:embed`, so the released
-binary is self-contained. See
+Frontend is **React 19 + Tailwind 4 + Radix primitives + Vite** in
+`server/frontend/src/`, with its own icon set and widgets. `make dev` serves it
+at http://localhost:5199 against built-in fixtures (no server or login needed;
+`MOCK=0 make dev` proxies to a real server on :8000). The design rules are in
+`server/frontend/DESIGN.md`. All dist assets are embedded into the Go binary via
+`go:embed`, so the released binary is self-contained. See
 **[Developing](https://github.com/DatanoiseTV/tinyice/wiki/Developing)** and
 **[Architecture](https://github.com/DatanoiseTV/tinyice/wiki/Architecture)**.
 

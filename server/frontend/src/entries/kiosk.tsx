@@ -1,5 +1,12 @@
-import { render } from 'preact'
-import '../globals.css'
-import { KioskDashboard } from '../pages/KioskDashboard'
+import '../styles/globals.css'
+import { createRoot } from 'react-dom/client'
+import { initTheme } from '@/lib/theme'
+import { LiveProvider } from '@/lib/live'
+import { Kiosk } from '@/pages/public/kiosk'
 
-render(<KioskDashboard />, document.getElementById('app')!)
+initTheme()
+createRoot(document.getElementById('app')!).render(
+  <LiveProvider>
+    <Kiosk />
+  </LiveProvider>,
+)

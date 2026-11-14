@@ -1,5 +1,14 @@
-import { render } from 'preact'
-import '../globals.css'
-import { Player } from '@/pages/Player'
+import '../styles/globals.css'
+import { createRoot } from 'react-dom/client'
+import { initTheme } from '@/lib/theme'
+import { TooltipProvider } from '@/ui/controls'
+import { Toasts } from '@/app/Toasts'
+import { Player } from '@/pages/public/player'
 
-render(<Player />, document.getElementById('app')!)
+initTheme()
+createRoot(document.getElementById('app')!).render(
+  <TooltipProvider delayDuration={250}>
+    <Player />
+    <Toasts />
+  </TooltipProvider>,
+)

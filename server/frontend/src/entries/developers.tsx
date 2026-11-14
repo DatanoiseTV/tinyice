@@ -1,4 +1,7 @@
-import { render } from 'preact'
-import '../globals.css'
-import { Developers } from '../pages/Developers'
-render(<Developers />, document.getElementById('app')!)
+import '../styles/globals.css'
+import { createRoot } from 'react-dom/client'
+import { initTheme } from '@/lib/theme'
+import { App } from '@/pages/public/developers'
+
+initTheme()
+createRoot(document.getElementById('app')!).render(<App />)

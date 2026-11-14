@@ -1,5 +1,7 @@
-import { render } from 'preact'
-import '../globals.css'
-import { AdminLayout } from '../pages/admin/AdminLayout'
+import '../styles/globals.css'
+import { createRoot } from 'react-dom/client'
+import { initTheme } from '@/lib/theme'
+import { AdminApp } from '@/app/AdminApp'
 
-render(<AdminLayout />, document.getElementById('app')!)
+initTheme()
+createRoot(document.getElementById('app')!).render(<AdminApp />)

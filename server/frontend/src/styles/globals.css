@@ -1,0 +1,99 @@
+@import "tailwindcss";
+@import "@fontsource-variable/ibm-plex-sans";
+@import "@fontsource-variable/jetbrains-mono";
+
+/*
+ * Design tokens. Everything the UI paints comes from these variables, so
+ * dark/light and the operator's branding accent are a variable swap, not a
+ * second stylesheet. Surfaces step up in lightness one notch per layer;
+ * borders do the separation work (flat design: no shadows on cards).
+ */
+:root {
+  --bg: #0b0c0e;
+  --surface: #101216;
+  --raised: #15181c;
+  --hover: #1a1e23;
+  --border: #22262c;
+  --border-strong: #2e343c;
+  --text: #e9ebee;
+  --muted: #a0a7b1;
+  --faint: #6c737e;
+  --accent: #ff6a00;
+  --accent-fg: #0b0c0e;
+  --live: #2fbf71;
+  --warn: #e6a23c;
+  --danger: #ef5350;
+  --info: #4c9aff;
+  color-scheme: dark;
+}
+:root[data-theme="light"] {
+  --bg: #f5f6f8;
+  --surface: #ffffff;
+  --raised: #fafbfc;
+  --hover: #f0f2f5;
+  --border: #e2e5ea;
+  --border-strong: #cfd4db;
+  --text: #14171a;
+  --muted: #545c67;
+  --faint: #7d8591;
+  --accent-fg: #ffffff;
+  --live: #14a15a;
+  --warn: #b8730a;
+  --danger: #d6332f;
+  --info: #1d6fe0;
+  color-scheme: light;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-raised: var(--raised);
+  --color-hover: var(--hover);
+  --color-line: var(--border);
+  --color-line-strong: var(--border-strong);
+  --color-ink: var(--text);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
+  --color-live: var(--live);
+  --color-warn: var(--warn);
+  --color-danger: var(--danger);
+  --color-info: var(--info);
+  /* IBM Plex Sans: capital I has serifs, so "TinyIce" cannot read as "Tinylce" (Inter draws them alike). */
+  --font-sans: "IBM Plex Sans Variable", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono Variable", ui-monospace, "SF Mono", Menlo, monospace;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+}
+
+html, body, #app { height: 100%; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+/* Tabular figures everywhere numbers change: no jitter on live counters. */
+.num { font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; }
+
+* { scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; border-radius: 4px; }
+::selection { background: color-mix(in srgb, var(--accent) 35%, transparent); }
+
+@keyframes tally { 0%, 100% { opacity: 1 } 50% { opacity: .35 } }
+.tally { animation: tally 1.6s ease-in-out infinite; }
+@keyframes fade-in { from { opacity: 0; transform: translateY(2px) } to { opacity: 1; transform: none } }
+@keyframes overlay-in { from { opacity: 0 } to { opacity: 1 } }
+@keyframes pop-in { from { opacity: 0; transform: scale(.97) } to { opacity: 1; transform: none } }
+@keyframes shimmer { from { background-position: 200% 0 } to { background-position: -200% 0 } }
+.skeleton {
+  background: linear-gradient(90deg, var(--raised) 25%, var(--hover) 50%, var(--raised) 75%);
+  background-size: 200% 100%; animation: shimmer 1.6s linear infinite; border-radius: 4px;
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}

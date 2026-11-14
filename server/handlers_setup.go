@@ -5,6 +5,7 @@ import (
 	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -65,7 +66,9 @@ func (s *Server) handleSetupComplete(w http.ResponseWriter, r *http.Request) {
 		Token    string `json:"token"`
 		Username string `json:"username"`
 		Password string `json:"password"`
+		setupOptions
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		jsonError(w, "Invalid request", http.StatusBadRequest)
 		return
@@ -84,6 +87,21 @@ func (s *Server) handleSetupComplete(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, "Username and password are required", http.StatusBadRequest)
 		return
 	}
+	if len([]rune(req.Username)) > 64 {
+		jsonError(w, "username: must be 64 characters or fewer", http.StatusBadRequest)
+		return
+	}
+	if len([]rune(req.Password)) < minSetupPasswordLen {
+		jsonError(w, fmt.Sprintf("password: use at least %d characters", minSetupPasswordLen), http.StatusBadRequest)
+		return
+	}
+
+	// Validate every optional answer before storing anything: all or nothing.
+	vals, verr := validateSetupOptions(&req.setupOptions)
+	if verr != nil {
+		jsonError(w, verr.Error(), http.StatusBadRequest)
+		return
+	}
 
 	hashed, err := config.HashPassword(req.Password)
 	if err != nil {
@@ -98,6 +116,15 @@ func (s *Server) handleSetupComplete(w http.ResponseWriter, r *http.Request) {
 	s.Config.AdminPassword = hashed
 	s.Config.SetupComplete = true
 	s.Config.LockMaps()
+	// Starting in setup mode runs the config migration, which creates a
+	// placeholder superadmin ("admin") with an empty password hash. Nothing real
+	// exists before setup, so drop every such placeholder: the operator's
+	// account must be the only one left, not a hidden one next to it.
+	for name, u := range s.Config.Users {
+		if u == nil || u.Password == "" {
+			delete(s.Config.Users, name)
+		}
+	}
 	s.Config.Users[req.Username] = &config.User{
 		Username: req.Username,
 		Password: hashed,
@@ -112,8 +139,42 @@ func (s *Server) handleSetupComplete(w http.ResponseWriter, r *http.Request) {
 	hLiveMount, _ := config.HashPassword(liveMountPass)
 	s.Config.DefaultSourcePassword = hDefaultSource
 	s.Config.LockMaps()
-	s.Config.Mounts["/live"] = hLiveMount
+	s.Config.Mounts[vals.mount] = hLiveMount
 	s.Config.UnlockMaps()
+
+	if vals.station {
+		if vals.title != "" {
+			s.Config.PageTitle = vals.title
+		}
+		if vals.subtitle != "" {
+			s.Config.PageSubtitle = vals.subtitle
+		}
+		if vals.location != "" {
+			s.Config.Location = vals.location
+		}
+		if vals.adminEmail != "" {
+			s.Config.AdminEmail = vals.adminEmail
+		}
+	}
+	if vals.address {
+		if vals.hostname != "" {
+			s.Config.HostName = vals.hostname
+		}
+		if vals.baseURL != "" {
+			s.Config.BaseURL = vals.baseURL
+		}
+	}
+	if vals.appearance && vals.accent != "" {
+		s.Config.AccentColor = vals.accent
+	}
+	if vals.audience {
+		if vals.maxListeners != nil {
+			s.Config.SetMaxListenersFromAPI(*vals.maxListeners)
+		}
+		if vals.directoryListing != nil {
+			s.Config.DirectoryListing = *vals.directoryListing
+		}
+	}
 
 	if err := s.Config.SaveConfig(); err != nil {
 		jsonError(w, "Failed to save config", http.StatusInternalServerError)
@@ -131,5 +192,12 @@ func (s *Server) handleSetupComplete(w http.ResponseWriter, r *http.Request) {
 		"success":             true,
 		"default_source_pass": defaultSourcePass,
 		"live_mount_pass":     liveMountPass,
+		"mount":               vals.mount,
+		"applied": map[string]bool{
+			"station":    vals.station,
+			"address":    vals.address,
+			"appearance": vals.appearance,
+			"audience":   vals.audience,
+		},
 	})
 }
