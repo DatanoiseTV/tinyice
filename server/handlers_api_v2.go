@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -2652,7 +2653,7 @@ func (s *Server) apiGetSettings(w http.ResponseWriter, r *http.Request) {
 		"admin_email":       s.Config.AdminEmail,
 		"admin_user":        s.Config.AdminUser,
 		"low_latency_mode":  s.Config.LowLatencyMode,
-		"max_listeners":     s.Config.MaxListeners,
+		"max_listeners":     s.Config.MaxListenersForAPI(),
 		"use_https":         s.Config.UseHTTPS,
 		"auto_https":        s.Config.AutoHTTPS,
 		"https_port":        s.Config.HTTPSPort,
@@ -2685,6 +2686,17 @@ func (s *Server) apiUpdateSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Validate before changing anything so a bad value never half-applies.
+	maxListeners, maxListenersSet := 0, false
+	if v, ok := body["max_listeners"]; ok {
+		n, ok := v.(float64)
+		if !ok || n != math.Trunc(n) || n < 0 || n > config.MaxListenersCeiling {
+			jsonError(w, fmt.Sprintf("max_listeners must be a whole number from 0 (unlimited) to %d", config.MaxListenersCeiling), http.StatusBadRequest)
+			return
+		}
+		maxListeners, maxListenersSet = int(n), true
+	}
+
 	if v, ok := body["hostname"]; ok {
 		s.Config.HostName = fmt.Sprintf("%v", v)
 	}
@@ -2703,10 +2715,8 @@ func (s *Server) apiUpdateSettings(w http.ResponseWriter, r *http.Request) {
 			s.Relay.LowLatency = b
 		}
 	}
-	if v, ok := body["max_listeners"]; ok {
-		if n, ok := v.(float64); ok {
-			s.Config.MaxListeners = int(n)
-		}
+	if maxListenersSet {
+		s.Config.SetMaxListenersFromAPI(maxListeners)
 	}
 	if v, ok := body["directory_listing"]; ok {
 		if b, ok := v.(bool); ok {

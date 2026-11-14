@@ -446,6 +446,7 @@ func ensureConfigExists() string {
 			BindHost:     *bindHost,
 			Port:         "8000",
 			HostName:     "localhost",
+			MaxListeners: config.DefaultMaxListeners,
 			Location:     "Earth",
 			AdminEmail:   "admin@localhost",
 			PageTitle:    "TinyIce",
