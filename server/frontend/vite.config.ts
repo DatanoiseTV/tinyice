@@ -23,10 +23,13 @@ function devRoutes(): Plugin {
     apply: 'serve',
     configureServer(server) {
       server.middlewares.use((req, _res, next) => {
+        // Only page loads are rewritten; POST /login, /setup/* etc. must reach the mock API.
+        if (req.method !== 'GET' && req.method !== 'HEAD') return next()
         const url = req.url ?? ''
         const path = url.split('?')[0]
         const map: [RegExp, string][] = [
-          [/^\/admin(\/.*)?$/, 'admin'],
+          // Only the SPA pages; /admin/events, /admin/security-stats etc. are API routes for the mock.
+          [/^\/admin\/?$|^\/admin\/(streams|autodj|golive|studio|relays|transcoders|users|pending|security|tokens|webhooks|settings)\/?$/, 'admin'],
           [/^\/kiosk\/?$/, 'kiosk'],
           [/^\/login\/?$/, 'login'],
           [/^\/setup\/?$/, 'setup'],
@@ -37,7 +40,7 @@ function devRoutes(): Plugin {
           [/^\/$/, 'landing'],
         ]
         for (const [re, name] of map) {
-          if (re.test(path) && !path.includes('.') && !path.startsWith('/admin/events')) {
+          if (re.test(path) && !path.includes('.')) {
             req.url = `/src/entries/${name}.html`
             break
           }

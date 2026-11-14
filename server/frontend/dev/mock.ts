@@ -50,7 +50,11 @@ async function readBody(req: IncomingMessage): Promise<Record<string, any>> {
 }
 
 function send(res: ServerResponse, r: MockResult | unknown) {
-  const isResult = r && typeof r === 'object' && ('status' in (r as object) || 'body' in (r as object))
+  // A {status, body, headers} envelope only when it is exactly that shape. A bare
+  // payload such as {status: 'updated'} (string status) is a plain 200 body.
+  const isResult = !!r && typeof r === 'object' && !Array.isArray(r)
+    && Object.keys(r as object).every((k) => k === 'status' || k === 'body' || k === 'headers')
+    && ('body' in (r as object) || typeof (r as MockResult).status === 'number')
   const { status = 200, body, headers } = (isResult ? r : { body: r }) as MockResult
   res.statusCode = status
   for (const [k, v] of Object.entries(headers ?? {})) res.setHeader(k, v)
@@ -119,7 +123,10 @@ function sse(req: IncomingMessage, res: ServerResponse, fixtures: Fixture[]) {
     const out = streams.reduce((a, s) => a + s.listeners * s.bitrate * 125, 0)
     frame({ event: 'stats', data: { listeners, streams: streams.length + 2, bandwidth: out + 190_000, bandwidth_in: 190_000 + wob(8000, 5), bandwidth_out: out, uptime: Math.floor((Date.now() - state.startedAt) / 1000), goroutines: 212 + (n % 7), memory: 61_000_000 + n * 900, gc: 340 + Math.floor(n / 20) } })
     for (const s of streams) frame({ event: 'stream', data: s })
-    for (const f of fixtures) for (const e of f.events?.(n) ?? []) frame(e)
+    for (const f of fixtures) {
+      try { for (const e of f.events?.(n) ?? []) frame(e) }
+      catch (err) { console.error(`[mock] fixture events() threw: ${(err as Error).message}`) }
+    }
   }
   tick()
   const id = setInterval(tick, 1000)

@@ -36,7 +36,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonHTMLAttributes<HTMLBut
 )
 
 /* ---------- Text inputs ---------- */
-const field = 'w-full rounded-md border border-line-strong bg-bg px-2.5 text-[13px] text-ink placeholder:text-faint transition-colors hover:border-faint focus:border-accent focus:outline-none disabled:opacity-50'
+const field = 'w-full rounded-md border border-line-strong bg-bg px-2.5 text-[13px] text-ink placeholder:text-faint transition-colors hover:border-faint focus:border-accent focus:outline-none disabled:opacity-50 aria-[invalid=true]:border-danger aria-[invalid=true]:focus:border-danger'
 export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement> & { mono?: boolean }>(
   ({ className, mono, ...p }, ref) => <input ref={ref} className={cn(field, 'h-8', mono && 'font-mono text-xs', className)} {...p} />,
 )
@@ -83,7 +83,7 @@ export function Segmented<T extends string>({ value, onChange, options, label }:
           aria-checked={value === o.value}
           onClick={() => onChange(o.value)}
           className={cn(
-            'h-6 rounded-[4px] px-2.5 text-xs font-medium transition-colors',
+            'h-7 rounded-[4px] px-3 text-xs font-medium transition-colors',
             value === o.value ? 'bg-hover text-ink' : 'text-faint hover:text-muted',
           )}
         >

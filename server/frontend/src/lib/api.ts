@@ -39,7 +39,9 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     throw new Error(err.error || res.statusText)
   }
   if (res.status === 204) return undefined as T
-  return res.json()
+  // Several endpoints answer 200 with an empty body (playlist/save, metadata, ...).
+  const text = await res.text()
+  return (text ? JSON.parse(text) : undefined) as T
 }
 
 export const api = {

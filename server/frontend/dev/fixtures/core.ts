@@ -3,7 +3,6 @@ import { state } from '../state'
 
 const fixture: Fixture = {
   default: [
-    { method: 'GET', path: '/api/streams', handle: () => state.sources },
   ],
   pages: {
     admin: { user: { username: 'admin', role: 'superadmin' }, mounts: state.mounts },
