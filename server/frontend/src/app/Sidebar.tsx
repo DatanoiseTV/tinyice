@@ -4,7 +4,14 @@ import { page } from '@/lib/api'
 import { Tip } from '@/ui/controls'
 import { Icon, Logo } from '@/ui/icons'
 import { Legend } from '@/ui/console'
+import { useBroadcast } from '@/pages/admin/golive/store'
 import { cn } from '@/lib/cn'
+
+/** "v0.11.1-0.2026...+dirty" (a Go pseudo-version) to "0.11.1"; release tags pass through. */
+function shortVersion(v: string): string {
+  const m = /^v?(\d+\.\d+\.\d+)/.exec(v)
+  return m ? `v${m[1]}${/-0\.\d{14}|dirty|dev/.test(v) ? ' dev' : ''}` : v
+}
 
 export function isActive(href: string, path: string) {
   return href === '/admin' ? path === '/admin' || path === '/admin/' : path.startsWith(href)
@@ -14,6 +21,8 @@ export function Sidebar({ collapsed, onToggle, mobileOpen, onNavigate }: { colla
   const [path] = useLocation()
   const { branding, pageTitle, user, version } = page()
   const rail = collapsed && !mobileOpen
+  // The browser broadcast outlives the Go Live page, so the shell must show it is still on air.
+  const onAir = useBroadcast().phase === 'live'
 
   return (
     <aside
@@ -24,7 +33,7 @@ export function Sidebar({ collapsed, onToggle, mobileOpen, onNavigate }: { colla
     >
       <div className={cn('flex h-12 shrink-0 items-center border-b border-line', rail ? 'justify-center' : 'gap-2.5 px-4')}>
         {branding.logoUrl ? <img src={branding.logoUrl} alt="" className="size-6 rounded object-cover" /> : <Logo size={24} />}
-        {!rail && <span className="truncate text-[13px] font-semibold tracking-tight text-ink">{pageTitle || 'TinyIce'}</span>}
+        {!rail && <span className="truncate font-mono text-[13px] font-semibold tracking-tight text-ink">{pageTitle || 'TinyIce'}</span>}
       </div>
 
       <nav className="flex-1 overflow-y-auto px-2 py-3" aria-label="Main">
@@ -42,6 +51,7 @@ export function Sidebar({ collapsed, onToggle, mobileOpen, onNavigate }: { colla
                     {active && <span className="absolute -left-2 top-1.5 h-5 w-[3px] rounded-r bg-accent" />}
                     <Icon name={it.icon} lit={active} className={cn('shrink-0', active ? 'text-ink' : 'text-faint group-hover:text-muted')} />
                     {!rail && <span className="truncate">{it.label}</span>}
+                    {it.id === 'golive' && onAir && <span className={cn('size-2 rounded-full bg-danger tally', rail ? 'absolute right-1.5 top-1.5' : 'ml-auto')} role="status" aria-label="On air" />}
                   </Link>
                 )
                 return <li key={it.id}>{rail ? <Tip content={it.label}>{link}</Tip> : link}</li>
@@ -65,7 +75,7 @@ export function Sidebar({ collapsed, onToggle, mobileOpen, onNavigate }: { colla
           </Tip>
         </div>
         <div className={cn('mt-1 flex items-center', rail ? 'justify-center' : 'justify-between px-1.5')}>
-          {!rail && <Legend>v{version}</Legend>}
+          {!rail && <span title={version}><Legend>{shortVersion(version)}</Legend></span>}
           <button onClick={onToggle} className="hidden size-6 items-center justify-center rounded text-faint hover:bg-hover hover:text-ink md:flex" aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}>
             <Icon name="sidebar" size={15} />
           </button>

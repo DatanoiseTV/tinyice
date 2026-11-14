@@ -6,6 +6,7 @@ import { AreaChart, Bar, Sparkline } from '@/ui/charts'
 import { Badge, EmptyState, PageHeader, Skeleton, Table, Td, Th } from '@/ui/display'
 import { Legend, Panel, Readout, Tally } from '@/ui/console'
 import { Icon, type IconName } from '@/ui/icons'
+import { GeoMap } from '@/widgets/GeoMap'
 import type { StreamEvent } from '@/types'
 
 function Kpi({ icon, label, value, unit, series, foot, loading }: { icon: IconName; label: string; value: string; unit?: string; series?: number[]; foot?: string; loading: boolean }) {
@@ -51,7 +52,7 @@ function StreamRow({ s }: { s: StreamEvent }) {
 }
 
 export default function Dashboard() {
-  const { stats, streams, history, connected } = useLive()
+  const { stats, streams, history, connected, geo } = useLive()
   const loading = !stats
   const total = streams.reduce((a, s) => a + s.listeners, 0)
   const times = useMemo(() => history.map((h) => h.t), [history])
@@ -78,6 +79,12 @@ export default function Dashboard() {
         </Panel>
         <Panel legend="Bandwidth" title="Last 5 minutes" lamp={connected ? 'live' : 'warn'}>
           {ready ? <AreaChart bytes times={times} format={(n) => rate(n).replace('/s', '')} series={[{ name: 'Out', values: out, color: 'var(--info)' }, { name: 'In', values: inn, color: 'var(--live)' }]} /> : <Skeleton className="h-[220px] w-full" />}
+        </Panel>
+      </div>
+
+      <div className="mt-3">
+        <Panel legend="Audience" title={geo.length ? `${geo.length} location${geo.length === 1 ? '' : 's'}` : 'No located listeners'} lamp={geo.length ? 'live' : 'off'} flush>
+          <GeoMap data={geo} className="h-80 w-full rounded-b-lg border-0" />
         </Panel>
       </div>
 
