@@ -1,5 +1,5 @@
 @import "tailwindcss";
-@import "@fontsource-variable/inter";
+@import "@fontsource-variable/ibm-plex-sans";
 @import "@fontsource-variable/jetbrains-mono";
 
 /*
@@ -60,7 +60,8 @@
   --color-warn: var(--warn);
   --color-danger: var(--danger);
   --color-info: var(--info);
-  --font-sans: "Inter Variable", system-ui, -apple-system, "Segoe UI", sans-serif;
+  /* IBM Plex Sans: capital I has serifs, so "TinyIce" cannot read as "Tinylce" (Inter draws them alike). */
+  --font-sans: "IBM Plex Sans Variable", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: "JetBrains Mono Variable", ui-monospace, "SF Mono", Menlo, monospace;
   --radius-sm: 4px;
   --radius-md: 6px;
@@ -74,7 +75,6 @@ body {
   font-family: var(--font-sans);
   font-size: 13px;
   line-height: 1.45;
-  font-feature-settings: "cv11", "ss01";
   -webkit-font-smoothing: antialiased;
 }
 /* Tabular figures everywhere numbers change: no jitter on live counters. */
