@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, page } from '@/lib/api'
 import { useLive } from '@/lib/live'
 import type { StreamEvent } from '@/types'
+import { real } from '@/lib/format'
 
 /** GET /api/streams row, exactly as the server sends it (apiGetStreams). */
 export interface ApiMount {
@@ -81,7 +82,7 @@ function merge(api: ApiMount, ev?: LiveStream): Mount {
   const hasSource = !!api.source_ip || !!ev
   const listeners = ev ? ev.listeners : api.listeners
   const health = ev ? ev.health : api.health
-  const song = ev?.song || api.current_song || composeSong(ev?.artist, ev?.title)
+  const song = real(ev?.song) || real(api.current_song) || composeSong(real(ev?.artist), real(ev?.title))
   const kbps = Number(ev?.bitrate ?? api.bitrate) || 0
   return {
     ...api,

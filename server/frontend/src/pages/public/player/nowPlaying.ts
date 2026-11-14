@@ -3,6 +3,7 @@ import { createSSE } from '@/lib/sse'
 import type { PlayerData } from '@/types'
 import { codecFromMime, kbps } from './source'
 import type { SourceStats } from './StatsPanel'
+import { real } from '@/lib/format'
 
 /**
  * Live metadata for one mount from the public /events feed. `title` on the
@@ -12,8 +13,8 @@ import type { SourceStats } from './StatsPanel'
  */
 export function useNowPlaying(data: Partial<PlayerData>) {
   const hasVideo = !!data.hasVideo
-  const [song, setSong] = useState(data.title ?? '')
-  const [name, setName] = useState(data.artist ?? '')
+  const [song, setSong] = useState(real(data.title))
+  const [name, setName] = useState(real(data.artist))
   const [audience, setAudience] = useState(data.listeners ?? 0)
   const [sourceLive, setSourceLive] = useState<boolean | undefined>(undefined)
   const [source, setSource] = useState<SourceStats>({
@@ -26,8 +27,8 @@ export function useNowPlaying(data: Partial<PlayerData>) {
     const off = sse.on('stream', (evt) => {
       if (evt.mount !== data.mount) return
       // Only overwrite with real values: between tracks the feed sends empty strings.
-      if (typeof evt.title === 'string' && evt.title !== '') setSong(evt.title)
-      if (typeof evt.artist === 'string' && evt.artist !== '') setName(evt.artist)
+      if (real(evt.title)) setSong(real(evt.title))
+      if (real(evt.artist)) setName(real(evt.artist))
       // Video mounts count viewers (HLS / WHEP); audio mounts count listeners.
       setAudience((hasVideo && typeof evt.viewers === 'number' ? evt.viewers : evt.listeners) || 0)
       if (typeof evt.live === 'boolean') setSourceLive(evt.live)

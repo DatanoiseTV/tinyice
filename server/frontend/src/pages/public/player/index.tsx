@@ -16,6 +16,7 @@ import { usePlayback, type Mode, type Phase } from './usePlayback'
 import { Spectrum } from './Spectrum'
 import { ShareDialog } from './ShareDialog'
 import { StatsPanel } from './StatsPanel'
+import { shortVersion } from '@/lib/format'
 
 type Tone = 'live' | 'warn' | 'danger' | 'off'
 
@@ -197,7 +198,7 @@ export function Player() {
         <span className="inline-flex items-center gap-1.5"><Kbd>Up</Kbd><Kbd>Down</Kbd>volume</span>
         {hasVideo && <span className="inline-flex items-center gap-1.5"><Kbd>F</Kbd>fullscreen</span>}
       </span>
-      <span className="ml-auto">Powered by TinyIce {data.version ? `v${data.version.replace(/^v/, '')}` : ''}</span>
+      <span className="ml-auto">Powered by TinyIce {shortVersion(data.version)}</span>
     </footer>
   )
 

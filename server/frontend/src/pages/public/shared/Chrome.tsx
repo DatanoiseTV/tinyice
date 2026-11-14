@@ -6,6 +6,7 @@ import { currentTheme, setTheme, type Theme } from '@/lib/theme'
 import { Toasts } from '@/app/Toasts'
 import { pageMeta } from './stations'
 import './icons'
+import { shortVersion } from '@/lib/format'
 
 export function ThemeToggle() {
   const [t, setT] = useState<Theme>(currentTheme)
@@ -59,7 +60,7 @@ export function PublicShell({ active, children, wide, bare }: { active?: string;
             <span>{m.title}</span>
             <a href="/developers" className="hover:text-ink">API</a>
             <a href="/admin" className="hover:text-ink sm:hidden">Admin</a>
-            <span className="ml-auto">TinyIce {m.version || 'dev'}</span>
+            <span className="ml-auto">TinyIce {shortVersion(m.version)}</span>
           </div>
         </footer>
       )}

@@ -4,14 +4,9 @@ import { page } from '@/lib/api'
 import { Tip } from '@/ui/controls'
 import { Icon, Logo } from '@/ui/icons'
 import { Legend } from '@/ui/console'
+import { shortVersion } from '@/lib/format'
 import { useBroadcast } from '@/pages/admin/golive/store'
 import { cn } from '@/lib/cn'
-
-/** "v0.11.1-0.2026...+dirty" (a Go pseudo-version) to "0.11.1"; release tags pass through. */
-function shortVersion(v: string): string {
-  const m = /^v?(\d+\.\d+\.\d+)/.exec(v)
-  return m ? `v${m[1]}${/-0\.\d{14}|dirty|dev/.test(v) ? ' dev' : ''}` : v
-}
 
 export function isActive(href: string, path: string) {
   return href === '/admin' ? path === '/admin' || path === '/admin/' : path.startsWith(href)
@@ -33,7 +28,7 @@ export function Sidebar({ collapsed, onToggle, mobileOpen, onNavigate }: { colla
     >
       <div className={cn('flex h-12 shrink-0 items-center border-b border-line', rail ? 'justify-center' : 'gap-2.5 px-4')}>
         {branding.logoUrl ? <img src={branding.logoUrl} alt="" className="size-6 rounded object-cover" /> : <Logo size={24} />}
-        {!rail && <span className="truncate font-mono text-[13px] font-semibold tracking-tight text-ink">{pageTitle || 'TinyIce'}</span>}
+        {!rail && <span className="truncate text-[13px] font-semibold tracking-tight text-ink">{pageTitle || 'TinyIce'}</span>}
       </div>
 
       <nav className="flex-1 overflow-y-auto px-2 py-3" aria-label="Main">

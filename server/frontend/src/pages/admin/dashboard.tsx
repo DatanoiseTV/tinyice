@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { Link } from 'wouter'
 import { useLive } from '@/lib/live'
-import { codec, compact, rate, uptime, bytes } from '@/lib/format'
+import { codec, compact, rate, uptime, bytes, real } from '@/lib/format'
 import { AreaChart, Bar, Sparkline } from '@/ui/charts'
 import { Badge, EmptyState, PageHeader, Skeleton, Table, Td, Th } from '@/ui/display'
 import { Legend, Panel, Readout, Tally } from '@/ui/console'
@@ -37,7 +37,7 @@ function StreamRow({ s }: { s: StreamEvent }) {
           {s.has_video && <Badge tone="info">Video</Badge>}
         </div>
       </Td>
-      <Td className="max-w-[320px]"><div className="truncate text-muted">{s.title ? (s.artist ? `${s.artist} - ${s.title}` : s.title) : <span className="text-faint">No metadata</span>}</div></Td>
+      <Td className="max-w-[320px]"><div className="truncate text-muted">{real(s.title) ? (real(s.artist) ? `${real(s.artist)} - ${real(s.title)}` : real(s.title)) : <span className="text-faint">No metadata</span>}</div></Td>
       <Td><Badge>{label}</Badge></Td>
       <Td align="right" mono>{s.bitrate ? `${s.bitrate} kbps` : '-'}</Td>
       <Td align="right" mono>{s.listeners}</Td>

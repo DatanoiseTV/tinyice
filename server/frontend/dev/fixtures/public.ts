@@ -39,7 +39,8 @@ function streamEvents(): string {
     mount: s.mount, name: NAMES[s.mount] ?? s.mount, listeners: s.base, bitrate: String(s.bitrate), uptime: '3h 12m',
     genre: 'Jazz', description: '', song: songFor(s.mount, tick), live: knob.live, has_video: !!s.has_video,
   }))
-  frames.push(`data: ${JSON.stringify(visible)}\n\n`)
+  // The real server sends `null`, not [], when nothing is visible.
+  frames.push(`data: ${JSON.stringify(visible.length ? visible : null)}\n\n`)
   for (const s of state.sources) {
     const listeners = Math.max(0, Math.round(s.base + Math.sin(tick / 9) * s.base * 0.08))
     frames.push(`event: stream\ndata: ${JSON.stringify({

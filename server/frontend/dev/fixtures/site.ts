@@ -75,13 +75,14 @@ const fixture: Fixture = {
       // connection open, so it sends one frame and EventSource reconnects
       // after `retry`, which is a close enough stand-in for the 500 ms tick.
       method: 'GET', path: '/events',
+      // Like the real server (server/handlers_stream.go), an empty list is sent as `null`, not [].
       handle: () => {
         const frame = streams().map((s) => ({
           mount: s.mount, name: s.artist, listeners: s.listeners, bitrate: String(s.bitrate), uptime: '3h 12m',
           genre: CATALOG.find((c) => c.mount === s.mount)!.genre, description: CATALOG.find((c) => c.mount === s.mount)!.description,
           song: s.title, live: s.live, has_video: s.has_video,
         }))
-        return { status: 200, headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' }, body: `retry: 1000\n\ndata: ${JSON.stringify(frame)}\n\n` }
+        return { status: 200, headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' }, body: `retry: 1000\n\ndata: ${JSON.stringify(frame.length ? frame : null)}\n\n` }
       },
     },
     // Login: the form posts here with Accept: application/json. The dev server

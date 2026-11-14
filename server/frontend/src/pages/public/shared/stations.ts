@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { createSSE } from '@/lib/sse'
 import { page } from '@/lib/api'
 import type { LandingData } from '@/types'
+import { real } from '@/lib/format'
 
 /**
  * One public mount. Field meanings follow the Go handlers, not their names:
@@ -59,7 +60,7 @@ function seed(): Station[] {
   // The server marshals a nil slice as `null` when nothing is visible.
   const list = page<Partial<LandingData>>().streams ?? []
   return list.map((s) => ({
-    mount: s.mount, song: s.title ?? '', name: s.artist ?? '', format: s.format ?? '', bitrate: Number(s.bitrate) || 0,
+    mount: s.mount, song: real(s.title), name: real(s.artist), format: s.format ?? '', bitrate: Number(s.bitrate) || 0,
     listeners: s.listeners ?? 0, live: !!s.live, hasVideo: !!s.has_video, genre: '', description: '', uptime: '',
   }))
 }
@@ -81,25 +82,29 @@ export function useStations() {
   useEffect(() => {
     const sse = createSSE('/events')
     const off = sse.on('message', (data) => {
-      if (!Array.isArray(data)) return
+      // The server sends `null` (not []) when nothing is visible. That is a valid
+      // tick meaning "no stations": ignoring it left an idle server showing
+      // "reconnecting" forever and kept the last station listed after it went off air.
+      if (data !== null && !Array.isArray(data)) return
       setLastTick(Date.now())
+      const frame = (Array.isArray(data) ? data : []) as PublicEvent[]
       setStations((prev) => {
         const known = new Map(prev.map((s) => [s.mount, s]))
-        return (data as PublicEvent[]).map((e) => {
+        return frame.map((e) => {
           const old = known.get(e.mount)
           const kbps = Number(e.bitrate)
           return {
             mount: e.mount,
-            song: e.song ?? '',
-            name: e.name ?? old?.name ?? '',
+            song: real(e.song),
+            name: real(e.name) || old?.name || '',
             format: old?.format ?? '',
             // Bitrate can arrive after connect (measured for sources that declare none): keep the last positive value.
             bitrate: kbps > 0 ? kbps : old?.bitrate ?? 0,
             listeners: e.listeners ?? 0,
             live: e.live ?? true,
             hasVideo: !!e.has_video,
-            genre: e.genre ?? '',
-            description: e.description ?? '',
+            genre: real(e.genre),
+            description: real(e.description),
             uptime: e.uptime ?? '',
           }
         })

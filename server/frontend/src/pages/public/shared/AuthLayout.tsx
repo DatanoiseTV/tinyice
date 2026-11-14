@@ -6,6 +6,7 @@ import { Toasts } from '@/app/Toasts'
 import { Brand, ThemeToggle } from './Chrome'
 import { pageMeta } from './stations'
 import './icons'
+import { shortVersion } from '@/lib/format'
 
 /** Centered single-card layout for login and setup. */
 export function AuthLayout({ children, heading, sub, width = 'max-w-[400px]' }: { children: ReactNode; heading: string; sub?: ReactNode; width?: string }) {
@@ -23,7 +24,7 @@ export function AuthLayout({ children, heading, sub, width = 'max-w-[400px]' }: 
           {sub && <p className="mt-1 text-[13px] text-muted">{sub}</p>}
           <div className="mt-5">{children}</div>
         </div>
-        <p className="mt-5 text-center font-mono text-[11px] text-faint">TinyIce {m.version || 'dev'}</p>
+        <p className="mt-5 text-center font-mono text-[11px] text-faint">TinyIce {shortVersion(m.version)}</p>
       </div>
       <Toasts />
     </div>

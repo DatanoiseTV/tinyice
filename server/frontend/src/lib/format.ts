@@ -41,3 +41,22 @@ export function clock(seconds: number): string {
   const m = Math.floor(s / 60)
   return `${m}:${String(s % 60).padStart(2, '0')}`
 }
+
+/** "v0.11.1-0.2026...+dirty" (a Go pseudo-version from an untagged build) to "v0.11.1 dev"; a release tag stays as is. */
+export function shortVersion(v?: string): string {
+  const ver = v ?? ''
+  const m = /^v?(\d+\.\d+\.\d+)/.exec(ver)
+  if (!m) return ver || 'dev'
+  return `v${m[1]}${/-0\.\d{14}|dirty|dev/.test(ver) ? ' dev' : ''}`
+}
+
+/**
+ * The server fills metadata it does not have with placeholders ("N/A",
+ * "Unnamed Stream", "No description", relay/relay.go). They are not content, so
+ * show nothing instead of the placeholder.
+ */
+const PLACEHOLDERS = new Set(['', 'n/a', '-', 'unnamed stream', 'no description'])
+export function real(v: string | null | undefined): string {
+  const t = (v ?? '').trim()
+  return PLACEHOLDERS.has(t.toLowerCase()) ? '' : t
+}
