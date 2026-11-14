@@ -1577,8 +1577,12 @@ func (s *Server) apiCreateRelay(w http.ResponseWriter, r *http.Request) {
 	if body.Mount[0] != '/' {
 		body.Mount = "/" + body.Mount
 	}
+	if body.BurstSize < 0 || body.BurstSize > maxBurstSize {
+		jsonError(w, fmt.Sprintf("burst_size must be between 0 and %d", maxBurstSize), http.StatusBadRequest)
+		return
+	}
 	if body.BurstSize == 0 {
-		body.BurstSize = 20
+		body.BurstSize = defaultRelayBurst
 	}
 
 	// Update existing or create new. An empty password on an update preserves
