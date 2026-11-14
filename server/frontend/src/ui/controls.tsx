@@ -3,7 +3,7 @@ import * as RSwitch from '@radix-ui/react-switch'
 import * as RTooltip from '@radix-ui/react-tooltip'
 import * as RDialog from '@radix-ui/react-dialog'
 import * as RSelect from '@radix-ui/react-select'
-import { Check, ChevronDown, Loader2, X } from 'lucide-react'
+import { Icon } from './icons'
 import { cn } from '@/lib/cn'
 
 /* ---------- Button ---------- */
@@ -29,7 +29,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonHTMLAttributes<HTMLBut
       )}
       {...p}
     >
-      {loading && <Loader2 className="size-3.5 animate-spin" />}
+      {loading && <Icon name="refresh" size={14} className="animate-spin" />}
       {children}
     </button>
   ),
@@ -123,7 +123,7 @@ export function Dialog({ open, onOpenChange, title, description, children, foote
               <RDialog.Title className="text-sm font-semibold text-ink">{title}</RDialog.Title>
               {description && <RDialog.Description className="mt-1 text-xs text-muted">{description}</RDialog.Description>}
             </div>
-            <RDialog.Close className="rounded p-1 text-faint hover:bg-hover hover:text-ink" aria-label="Close"><X className="size-4" /></RDialog.Close>
+            <RDialog.Close className="rounded p-1 text-faint hover:bg-hover hover:text-ink" aria-label="Close"><Icon name="x" /></RDialog.Close>
           </div>
           {children && <div className="px-5 py-4">{children}</div>}
           {footer && <div className="flex justify-end gap-2 border-t border-line px-5 py-3">{footer}</div>}
@@ -141,7 +141,7 @@ export function Select({ value, onValueChange, options, placeholder, className }
     <RSelect.Root value={value} onValueChange={onValueChange}>
       <RSelect.Trigger className={cn(field, 'inline-flex h-8 items-center justify-between gap-2', className)}>
         <RSelect.Value placeholder={placeholder} />
-        <RSelect.Icon><ChevronDown className="size-3.5 text-faint" /></RSelect.Icon>
+        <RSelect.Icon><Icon name="chevron-down" size={14} className="text-faint" /></RSelect.Icon>
       </RSelect.Trigger>
       <RSelect.Portal>
         <RSelect.Content position="popper" sideOffset={4} className="z-50 min-w-[var(--radix-select-trigger-width)] rounded-md border border-line-strong bg-raised p-1 animate-[pop-in_.12s_ease-out]">
@@ -149,7 +149,7 @@ export function Select({ value, onValueChange, options, placeholder, className }
             {options.map((o) => (
               <RSelect.Item key={o.value} value={o.value} className="flex h-7 cursor-default select-none items-center justify-between gap-3 rounded px-2 text-[13px] text-ink outline-none data-[highlighted]:bg-hover">
                 <RSelect.ItemText>{o.label}</RSelect.ItemText>
-                <RSelect.ItemIndicator><Check className="size-3.5 text-accent" /></RSelect.ItemIndicator>
+                <RSelect.ItemIndicator><Icon name="check" size={14} className="text-accent" /></RSelect.ItemIndicator>
               </RSelect.Item>
             ))}
           </RSelect.Viewport>

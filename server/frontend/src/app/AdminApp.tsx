@@ -1,7 +1,6 @@
-import { lazy, Suspense, useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useState, type ComponentType } from 'react'
 import { Route, Switch, useLocation } from 'wouter'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { Menu, Moon, Search, Sun } from 'lucide-react'
 import { Sidebar, isActive } from './Sidebar'
 import { CommandPalette } from './CommandPalette'
 import { Toasts } from './Toasts'
@@ -9,12 +8,28 @@ import { ALL_NAV } from './nav'
 import { LiveProvider, useLive } from '@/lib/live'
 import { currentTheme, setTheme } from '@/lib/theme'
 import { TooltipProvider } from '@/ui/controls'
-import { Kbd, Skeleton, Tally } from '@/ui/display'
-import { Dashboard } from '@/pages/Dashboard'
+import { Kbd, Skeleton, EmptyState, PageHeader } from '@/ui/display'
+import { Tally } from '@/ui/console'
+import { Icon } from '@/ui/icons'
 import { cn } from '@/lib/cn'
 
-const NotYet = lazy(() => import('@/pages/NotYet'))
 const qc = new QueryClient({ defaultOptions: { queries: { staleTime: 10_000, retry: 1, refetchOnWindowFocus: false } } })
+
+/**
+ * Admin pages are discovered by file name: src/pages/admin/<nav id>.tsx with a
+ * default export. Adding a page never touches this file (see app/nav.ts for ids).
+ */
+const modules = import.meta.glob<{ default: ComponentType }>('/src/pages/admin/*.tsx')
+
+function Missing({ id }: { id: string }) {
+  const item = ALL_NAV.find((n) => n.id === id)
+  return (
+    <>
+      <PageHeader title={item?.label ?? 'Not found'} sub={item?.hint} />
+      <EmptyState icon={<Icon name="settings" size={20} />} title={item ? 'Not built yet' : 'Page not found'} body={item ? 'This screen has no implementation in this build.' : 'There is no admin page at this address.'} />
+    </>
+  )
+}
 
 function Topbar({ onMenu, onSearch }: { onMenu: () => void; onSearch: () => void }) {
   const [path] = useLocation()
@@ -25,21 +40,38 @@ function Topbar({ onMenu, onSearch }: { onMenu: () => void; onSearch: () => void
 
   return (
     <header className="sticky top-0 z-30 flex h-12 items-center gap-3 border-b border-line bg-bg/85 px-4 backdrop-blur">
-      <button onClick={onMenu} className="flex size-8 items-center justify-center rounded-md text-muted hover:bg-hover md:hidden" aria-label="Open menu"><Menu className="size-4" /></button>
+      <button onClick={onMenu} className="flex size-8 items-center justify-center rounded-md text-muted hover:bg-hover md:hidden" aria-label="Open menu"><Icon name="menu" /></button>
       <div className="flex items-center gap-2 text-[13px]">
         <span className="text-faint">Admin</span><span className="text-line-strong">/</span><span className="font-medium text-ink">{here?.label ?? 'Not found'}</span>
       </div>
-      <button onClick={onSearch} className="ml-auto flex h-8 w-64 items-center gap-2 rounded-md border border-line bg-surface px-2.5 text-xs text-faint transition-colors hover:border-line-strong max-lg:w-auto">
-        <Search className="size-3.5" /><span className="max-lg:hidden">Search or jump to...</span><span className="ml-auto flex gap-1 max-lg:hidden"><Kbd>⌘</Kbd><Kbd>K</Kbd></span>
+      <button onClick={onSearch} className="ml-auto flex h-8 w-64 items-center gap-2 rounded-md border border-line bg-surface px-2.5 text-xs text-faint transition-colors hover:border-line-strong max-lg:w-auto" aria-label="Search">
+        <Icon name="search" size={14} /><span className="max-lg:hidden">Search or jump to...</span><span className="ml-auto flex gap-1 max-lg:hidden"><Kbd>⌘</Kbd><Kbd>K</Kbd></span>
       </button>
       <div className="flex items-center gap-2 rounded-md border border-line bg-surface px-2.5 py-1.5 text-xs" title={connected ? 'Event stream connected' : 'Connecting to event stream'}>
-        <Tally on={connected} className={cn(!connected && 'bg-warn')} />
-        <span className="num whitespace-nowrap text-muted">{connected ? `${stats?.listeners ?? 0}` : '...'}<span className="max-sm:hidden">{connected ? ' listening' : ' Connecting'}</span></span>
+        <Tally on={connected} />
+        <span className="num whitespace-nowrap text-muted">{connected ? stats?.listeners ?? 0 : '...'}<span className="max-sm:hidden">{connected ? ' listening' : ' connecting'}</span></span>
       </div>
       <button onClick={toggle} className="flex size-8 items-center justify-center rounded-md text-muted hover:bg-hover hover:text-ink" aria-label="Toggle theme">
-        {theme === 'dark' ? <Sun className="size-4" /> : <Moon className="size-4" />}
+        <Icon name={theme === 'dark' ? 'sun' : 'moon'} />
       </button>
     </header>
+  )
+}
+
+function Routes() {
+  const routes = useMemo(() => ALL_NAV.map((n) => {
+    const loader = modules[`/src/pages/admin/${n.id}.tsx`]
+    return { n, Comp: loader ? lazy(loader) : null }
+  }), [])
+  return (
+    <Suspense fallback={<Skeleton className="h-64 w-full" />}>
+      <Switch>
+        {routes.map(({ n, Comp }) => (
+          <Route key={n.id} path={n.href} nest={false}>{Comp ? <Comp /> : <Missing id={n.id} />}</Route>
+        ))}
+        <Route><Missing id="" /></Route>
+      </Switch>
+    </Suspense>
   )
 }
 
@@ -60,14 +92,7 @@ function Shell() {
       {mobile && <div className="fixed inset-0 z-30 bg-black/50 md:hidden" onClick={() => setMobile(false)} />}
       <div className={cn('min-w-0 transition-[padding] duration-200', collapsed ? 'md:pl-14' : 'md:pl-56')}>
         <Topbar onMenu={() => setMobile(true)} onSearch={() => setPalette(true)} />
-        <main className="mx-auto max-w-[1440px] px-5 py-6 max-sm:px-4">
-          <Suspense fallback={<Skeleton className="h-64 w-full" />}>
-            <Switch>
-              <Route path="/admin" component={Dashboard} />
-              <Route path="/admin/:rest*" component={NotYet} />
-            </Switch>
-          </Suspense>
-        </main>
+        <main className="mx-auto max-w-[1440px] px-5 py-6 max-sm:px-4"><Routes /></main>
       </div>
       <CommandPalette open={palette} onOpenChange={setPalette} />
       <Toasts />
@@ -78,9 +103,7 @@ function Shell() {
 export function AdminApp() {
   return (
     <QueryClientProvider client={qc}>
-      <TooltipProvider>
-        <LiveProvider><Shell /></LiveProvider>
-      </TooltipProvider>
+      <TooltipProvider><LiveProvider><Shell /></LiveProvider></TooltipProvider>
     </QueryClientProvider>
   )
 }

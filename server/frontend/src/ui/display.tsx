@@ -46,11 +46,6 @@ export function Badge({ tone = 'neutral', dot, children, className }: { tone?: T
   )
 }
 
-/** Pulsing tally dot, the "on air" lamp. */
-export function Tally({ on, className }: { on: boolean; className?: string }) {
-  return <span className={cn('inline-block size-2 rounded-full', on ? 'bg-live tally' : 'bg-line-strong', className)} aria-hidden />
-}
-
 export function Kbd({ children }: { children: ReactNode }) {
   return <kbd className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded border border-line-strong bg-raised px-1 font-mono text-[10px] text-muted">{children}</kbd>
 }

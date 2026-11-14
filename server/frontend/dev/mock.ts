@@ -1,12 +1,19 @@
-import type { Plugin } from 'vite'
+import type { Plugin, ViteDevServer } from 'vite'
 import type { IncomingMessage, ServerResponse } from 'http'
+import { readdirSync } from 'fs'
+import { resolve } from 'path'
+import { state } from './state'
+import type { Fixture, MockCtx, MockEvent, MockResult, MockRoute } from './types'
 
 /**
- * Dev-only fixtures so the UI can be built and reviewed without a Go server,
- * a login, or real encoders. It serves the same shapes the real endpoints do
- * (see server/handlers_api.go and server/openapi.yaml) and injects the same
- * window.__TINYICE__ the Go ShellRenderer injects. Run with MOCK=0 to proxy
- * to a real server on :8000 instead.
+ * Dev-only mock backend. Serves fixtures with the same JSON shapes the Go
+ * server returns (server/handlers_*.go, server/openapi.yaml) and injects the
+ * same window.__TINYICE__ the Go ShellRenderer injects, so every page can be
+ * built and live-reloaded without a server, a login or real encoders.
+ *
+ * Every file in dev/fixtures/*.ts is a fixture (see types.ts). They are
+ * loaded through Vite's SSR loader, so editing one takes effect on the next
+ * request with no restart. MOCK=0 bypasses all of this and proxies to :8000.
  */
 const base = {
   csrfToken: 'dev-csrf',
@@ -17,55 +24,104 @@ const base = {
   passkeysEnabled: true,
   oidcProviders: [{ id: 'google', name: 'Google', icon: 'google' }],
 }
-const mounts = ['/live', '/radio', '/jazz', '/talk']
-const pageData: Record<string, object> = {
-  admin: { ...base, user: { username: 'admin', role: 'superadmin' }, mounts },
+
+async function loadFixtures(server: ViteDevServer): Promise<Fixture[]> {
+  const dir = resolve(__dirname, 'fixtures')
+  const out: Fixture[] = []
+  for (const f of readdirSync(dir).filter((n) => n.endsWith('.ts')).sort()) {
+    try { out.push(await server.ssrLoadModule(`/dev/fixtures/${f}`) as Fixture) }
+    catch (e) { server.config.logger.error(`[mock] fixture ${f} failed to load: ${(e as Error).message}`) }
+  }
+  return out
 }
 
-const sources = [
-  { mount: '/live', title: 'Morning Show', artist: 'DJ Orbit', format: 'audio/mpeg', bitrate: 128, base: 142, health: 98, has_video: true },
-  { mount: '/radio', title: 'Blue in Green', artist: 'Miles Davis', format: 'audio/mpeg', bitrate: 192, base: 88, health: 100 },
-  { mount: '/jazz', title: 'Take Five', artist: 'Dave Brubeck', format: 'audio/ogg; codecs=opus', bitrate: 96, base: 31, health: 64 },
-  { mount: '/talk', title: 'Evening Briefing', artist: '', format: 'audio/aac', bitrate: 64, base: 12, health: 100, is_transcoded: true, source_mount: '/live', source_type: 'audio/mpeg', source_bitrate: '128' },
-]
-const t0 = Date.now() - 3 * 86400_000 - 4 * 3600_000
+async function readBody(req: IncomingMessage): Promise<Record<string, any>> {
+  if (req.method === 'GET' || req.method === 'HEAD') return {}
+  const chunks: Buffer[] = []
+  for await (const c of req) chunks.push(c as Buffer)
+  const raw = Buffer.concat(chunks).toString('utf8')
+  if (!raw) return {}
+  const ct = req.headers['content-type'] ?? ''
+  try {
+    if (ct.includes('json')) return JSON.parse(raw)
+    if (ct.includes('x-www-form-urlencoded')) return Object.fromEntries(new URLSearchParams(raw))
+  } catch { /* fall through */ }
+  return {}
+}
 
-function sse(req: IncomingMessage, res: ServerResponse) {
-  res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' })
-  let n = 0
-  const tick = () => {
-    n++
-    const wob = (amp: number, p: number) => Math.sin(n / p) * amp + (Math.random() - 0.5) * amp * 0.4
-    const streams = sources.map((s) => ({ ...s, listeners: Math.max(0, Math.round(s.base + wob(s.base * 0.12, 9))), health: Math.max(0, Math.min(100, Math.round(s.health + wob(2, 3)))) }))
-    const listeners = streams.reduce((a, s) => a + s.listeners, 0)
-    const out = streams.reduce((a, s) => a + s.listeners * s.bitrate * 125, 0)
-    res.write(`event: stats\ndata: ${JSON.stringify({ listeners, streams: 6, bandwidth: out + 190_000, bandwidth_in: 190_000 + wob(8000, 5), bandwidth_out: out, uptime: Math.floor((Date.now() - t0) / 1000), goroutines: 212 + (n % 7), memory: 61_000_000 + n * 900, gc: 340 + Math.floor(n / 20) })}\n\n`)
-    for (const s of streams) res.write(`event: stream\ndata: ${JSON.stringify(s)}\n\n`)
+function send(res: ServerResponse, r: MockResult | unknown) {
+  const isResult = r && typeof r === 'object' && ('status' in (r as object) || 'body' in (r as object))
+  const { status = 200, body, headers } = (isResult ? r : { body: r }) as MockResult
+  res.statusCode = status
+  for (const [k, v] of Object.entries(headers ?? {})) res.setHeader(k, v)
+  if (status === 204 || body === undefined) { res.end(); return }
+  if (!res.hasHeader('Content-Type')) res.setHeader('Content-Type', 'application/json')
+  res.end(typeof body === 'string' ? body : JSON.stringify(body))
+}
+
+function matchRoute(routes: MockRoute[], method: string, path: string) {
+  for (const r of routes) {
+    if (r.method && r.method !== method) continue
+    if (typeof r.path === 'string') { if (r.path === path) return { r, params: {} } }
+    else { const m = r.path.exec(path); if (m) return { r, params: { ...(m.groups ?? {}) } } }
   }
-  tick()
-  const id = setInterval(tick, 1000)
-  req.on('close', () => clearInterval(id))
+  return null
 }
 
 export function mockApi(): Plugin {
+  let server: ViteDevServer
   return {
     name: 'tinyice-mock-api',
     apply: 'serve',
-    configureServer(server) {
-      server.middlewares.use((req, res, next) => {
-        const path = (req.url ?? '').split('?')[0]
-        if (path === '/admin/events') return sse(req, res)
-        if (path === '/api/streams') { res.setHeader('Content-Type', 'application/json'); return void res.end(JSON.stringify(sources)) }
-        next()
+    configureServer(s) {
+      server = s
+      s.middlewares.use(async (req, res, next) => {
+        const url = new URL(req.url ?? '/', 'http://x')
+        const path = url.pathname
+        const isApi = /^\/(api|admin\/(?!$)[\w-]+|auth|setup\/|login$|logout$|events$|status-json|webrtc|branding|metrics)/.test(path) && !path.includes('.') && !/^\/admin(\/(streams|autodj|golive|studio|relays|transcoders|users|pending|security|tokens|webhooks|settings))?\/?$/.test(path)
+        if (!isApi && path !== '/admin/events') return next()
+        const fixtures = await loadFixtures(server)
+
+        if (path === '/admin/events') return sse(req, res, fixtures)
+
+        const routes = fixtures.flatMap((f) => f.default ?? [])
+        const hit = matchRoute(routes, req.method ?? 'GET', path)
+        if (!hit) return send(res, { status: 404, body: { error: `mock: no fixture for ${req.method} ${path}` } })
+        try {
+          const ctx: MockCtx = { req, url, params: hit.params, body: await readBody(req) }
+          send(res, await hit.r.handle(ctx))
+        } catch (e) {
+          send(res, { status: 500, body: { error: (e as Error).message } })
+        }
       })
     },
     transformIndexHtml: {
       order: 'pre',
-      handler(html, ctx) {
+      async handler(html, ctx) {
         const name = /entries\/(\w+)\.html/.exec(ctx.path)?.[1] ?? 'admin'
-        const data = pageData[name] ?? { ...base }
-        return html.replace('<div id="app"></div>', `<script>window.__TINYICE__=${JSON.stringify(data)}</script>\n<div id="app"></div>`)
+        const fixtures = await loadFixtures(server)
+        const data = Object.assign({ ...base }, ...fixtures.map((f) => f.pages?.[name] ?? {}))
+        return html.replace('<div id="app"></div>', `<script>window.__TINYICE__=${JSON.stringify(data).replace(/</g, '\\u003c')}</script>\n<div id="app"></div>`)
       },
     },
   }
+}
+
+function sse(req: IncomingMessage, res: ServerResponse, fixtures: Fixture[]) {
+  res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' })
+  let n = 0
+  const frame = (e: MockEvent) => res.write(`event: ${e.event}\ndata: ${JSON.stringify(e.data)}\n\n`)
+  const tick = () => {
+    n++
+    const wob = (amp: number, p: number) => Math.sin(n / p) * amp + (Math.random() - 0.5) * amp * 0.4
+    const streams = state.sources.map((s) => ({ ...s, listeners: Math.max(0, Math.round(s.base + wob(s.base * 0.12, 9))), health: Math.max(0, Math.min(100, Math.round(s.health + wob(2, 3)))) }))
+    const listeners = streams.reduce((a, s) => a + s.listeners, 0)
+    const out = streams.reduce((a, s) => a + s.listeners * s.bitrate * 125, 0)
+    frame({ event: 'stats', data: { listeners, streams: streams.length + 2, bandwidth: out + 190_000, bandwidth_in: 190_000 + wob(8000, 5), bandwidth_out: out, uptime: Math.floor((Date.now() - state.startedAt) / 1000), goroutines: 212 + (n % 7), memory: 61_000_000 + n * 900, gc: 340 + Math.floor(n / 20) } })
+    for (const s of streams) frame({ event: 'stream', data: s })
+    for (const f of fixtures) for (const e of f.events?.(n) ?? []) frame(e)
+  }
+  tick()
+  const id = setInterval(tick, 1000)
+  req.on('close', () => clearInterval(id))
 }

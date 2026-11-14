@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Command } from 'cmdk'
 import * as RDialog from '@radix-ui/react-dialog'
 import { useLocation } from 'wouter'
-import { Moon, Radio, Search, Sun } from 'lucide-react'
+import { Icon } from '@/ui/icons'
 import { ALL_NAV } from './nav'
 import { currentTheme, setTheme } from '@/lib/theme'
 import { page } from '@/lib/api'
@@ -25,7 +25,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
           <RDialog.Title className="sr-only">Command palette</RDialog.Title>
           <Command label="Command palette" loop>
             <div className="flex items-center gap-2.5 border-b border-line px-4">
-              <Search className="size-4 text-faint" />
+              <Icon name="search" className="text-faint" />
               <Command.Input value={q} onValueChange={setQ} placeholder="Jump to a page, a mount, or run a command" className="h-12 flex-1 bg-transparent text-[13px] text-ink outline-none placeholder:text-faint" />
               <Kbd>esc</Kbd>
             </div>
@@ -34,7 +34,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
               <Command.Group heading="Pages" className="[&_[cmdk-group-heading]]:px-2.5 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-[11px] [&_[cmdk-group-heading]]:text-faint">
                 {ALL_NAV.map((n) => (
                   <Command.Item key={n.id} value={`${n.label} ${n.hint}`} onSelect={run(() => go(n.href))} className={item}>
-                    <n.icon className="size-4 text-faint" strokeWidth={1.75} /><span className="text-ink">{n.label}</span><span className="ml-auto truncate text-xs text-faint">{n.hint}</span>
+                    <Icon name={n.icon} className="text-faint" /><span className="text-ink">{n.label}</span><span className="ml-auto truncate text-xs text-faint">{n.hint}</span>
                   </Command.Item>
                 ))}
               </Command.Group>
@@ -42,14 +42,14 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
                 <Command.Group heading="Open listener page" className="[&_[cmdk-group-heading]]:px-2.5 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-[11px] [&_[cmdk-group-heading]]:text-faint">
                   {mounts.map((m) => (
                     <Command.Item key={m} value={`mount ${m}`} onSelect={run(() => window.open(`/player${m}`, '_blank'))} className={item}>
-                      <Radio className="size-4 text-faint" strokeWidth={1.75} /><span className="font-mono text-xs text-ink">{m}</span>
+                      <Icon name="streams" className="text-faint" /><span className="font-mono text-xs text-ink">{m}</span>
                     </Command.Item>
                   ))}
                 </Command.Group>
               )}
               <Command.Group heading="Appearance" className="[&_[cmdk-group-heading]]:px-2.5 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-[11px] [&_[cmdk-group-heading]]:text-faint">
                 <Command.Item value="toggle theme dark light" onSelect={run(() => setTheme(currentTheme() === 'dark' ? 'light' : 'dark'))} className={item}>
-                  {currentTheme() === 'dark' ? <Sun className="size-4 text-faint" /> : <Moon className="size-4 text-faint" />}<span className="text-ink">Toggle theme</span>
+                  <Icon name={currentTheme() === 'dark' ? 'sun' : 'moon'} className="text-faint" /><span className="text-ink">Toggle theme</span>
                 </Command.Item>
               </Command.Group>
             </Command.List>
