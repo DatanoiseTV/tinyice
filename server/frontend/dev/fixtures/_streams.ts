@@ -137,7 +137,7 @@ const fixture: Fixture = {
         const wob = Math.round(Math.sin(n / 9 + mount.length) * live.base * 0.1)
         const listeners = Math.max(0, Math.round(live.base) + (live.base ? wob : 0))
         const song = st.songs[mount] ? [st.songs[mount].artist, st.songs[mount].title].filter(Boolean).join(' - ') : live.artist ? `${live.artist} - ${live.title}` : live.title
-        return [{ event: 'stream', data: { mount, name: meta.name, artist: st.songs[mount]?.artist ?? live.artist, title: st.songs[mount]?.title ?? live.title, song, format: live.format, type: live.format, bitrate: String(live.bitrate), listeners, viewers: 0, health: live.health, ip: meta.ip, uptime: hms((Date.now() - meta.startedAt) / 1000), is_transcoded: !!live.is_transcoded, bytes_in: 0, bytes_out: 0, bytes_dropped: 0, has_video: !!live.has_video } }]
+        return [{ event: 'stream', data: { mount, name: meta.name, artist: st.songs[mount]?.artist ?? live.artist, title: st.songs[mount]?.title ?? live.title, song, format: live.format, type: live.format, bitrate: String(live.bitrate), listeners, viewers: 0, health: live.health, ip: meta.ip, uptime: hms((Date.now() - meta.startedAt) / 1000), is_transcoded: !!live.is_transcoded, ...(live.is_transcoded ? { source_mount: live.source_mount, source_type: live.source_type, source_bitrate: live.source_bitrate } : {}), bytes_in: 0, bytes_out: 0, bytes_dropped: 0, has_video: !!live.has_video } }]
       })
     } catch { return [] /* never let a fixture take the dev server down */ }
   },
