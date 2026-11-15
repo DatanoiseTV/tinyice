@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -68,6 +69,20 @@ func NewWebRTCManager(r *Relay) *WebRTCManager {
 	s := webrtc.SettingEngine{}
 	// Optimize for many listeners
 	s.SetICETimeouts(10*time.Second, 20*time.Second, 2*time.Second)
+	// TINYICE_WEBRTC_UDP_PORTS="min-max" keeps ICE on a fixed UDP range.
+	// Open this range in the host firewall.
+	if v := os.Getenv("TINYICE_WEBRTC_UDP_PORTS"); v != "" {
+		var lo, hi uint16
+		if _, err := fmt.Sscanf(v, "%d-%d", &lo, &hi); err == nil && lo > 0 && hi >= lo {
+			if err := s.SetEphemeralUDPPortRange(lo, hi); err != nil {
+				logger.L.Errorw("WebRTC: invalid UDP port range", "range", v, "error", err)
+			} else {
+				logger.L.Infow("WebRTC: UDP port range set", "min", lo, "max", hi)
+			}
+		} else {
+			logger.L.Errorw("WebRTC: cannot parse TINYICE_WEBRTC_UDP_PORTS", "value", v)
+		}
+	}
 
 	api := webrtc.NewAPI(webrtc.WithSettingEngine(s))
 
