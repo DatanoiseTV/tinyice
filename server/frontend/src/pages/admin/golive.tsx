@@ -12,6 +12,7 @@ import { broadcaster, GAIN_MAX_DB, GAIN_MIN_DB } from './golive/engine'
 import { DestinationPanel, GoLiveButton, mountError, Preflight, type MountInfo } from './golive/destination'
 import { LinkPanel, OnAirBar } from './golive/link'
 import { Meters } from './golive/meters'
+import { ExternalAppPanel, ListenPanel } from './golive/share'
 import { SourcePanel, toCaptureOpts } from './golive/source'
 import { loadPrefs, savePrefs, useBroadcast, type Prefs } from './golive/store'
 
@@ -187,6 +188,9 @@ export default function GoLive() {
               <Legend className="block text-center">{snap.phase === 'connecting' ? 'Negotiating with the server' : onAir ? 'Stop is confirmed before it takes effect' : 'Opens the input first if it is closed'}</Legend>
             </div>
           </Panel>
+
+          {!mErr && <ListenPanel mount={prefs.mount} live={snap.phase === 'live'} />}
+          {!mErr && <ExternalAppPanel mount={prefs.mount} />}
         </div>
       </div>
       {dialog}
