@@ -247,6 +247,8 @@ func (h *DecoderHub) runPump(inputMount string, ps *pcmStream) {
 		strings.Contains(strings.ToLower(input.ContentType), "opus") ||
 		strings.Contains(strings.ToLower(input.ContentType), "vorbis") ||
 		strings.Contains(strings.ToLower(input.ContentType), "flac")
+	isMP3 := strings.Contains(strings.ToLower(input.ContentType), "mpeg") ||
+		strings.Contains(strings.ToLower(input.ContentType), "mp3")
 	var headBytes []byte
 	if len(input.OggHead) > 0 {
 		headBytes = append(headBytes, input.OggHead...)
@@ -271,6 +273,13 @@ func (h *DecoderHub) runPump(inputMount string, ps *pcmStream) {
 			reader = live
 		}
 	} else {
+		if isMP3 {
+			// Relay subscribers join mid-buffer; MP3 decoders need a frame boundary.
+			aligned := input.Buffer.FindNextMP3FrameLocked(offset)
+			if aligned < input.Buffer.HeadOffset() {
+				offset = aligned
+			}
+		}
 		reader = NewStreamReader(input.Buffer, offset, signal, pumpCtx, subID).WithOggSync(input)
 	}
 

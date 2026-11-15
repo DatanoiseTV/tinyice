@@ -168,6 +168,38 @@ func (cb *CircularBuffer) FindNextPageBoundaryLocked(start int64) int64 {
 	return FindNextPageBoundary(cb.Data, cb.Size, cb.Head, start)
 }
 
+// FindNextMP3FrameLocked returns the first valid MPEG audio frame header
+// at or after start. A relay subscriber joins at a random byte in the buffer.
+// An MP3 decoder must start on a frame boundary.
+// A return value of Head means that no full header is available now.
+func (cb *CircularBuffer) FindNextMP3FrameLocked(start int64) int64 {
+	cb.mu.RLock()
+	defer cb.mu.RUnlock()
+
+	oldest := cb.Head - cb.Size
+	if oldest < 0 {
+		oldest = 0
+	}
+	if start < oldest {
+		start = oldest
+	}
+
+	for pos := start; pos+1 < cb.Head; pos++ {
+		first := cb.Data[pos%cb.Size]
+		second := cb.Data[(pos+1)%cb.Size]
+		if first != 0xFF || second&0xE0 != 0xE0 {
+			continue
+		}
+		// The MPEG standard does not use version 01 or layer 00.
+		// This check stops most random 0xFFE0 bit patterns.
+		if (second>>3)&0x03 == 0x01 || (second>>1)&0x03 == 0x00 {
+			continue
+		}
+		return pos
+	}
+	return cb.Head
+}
+
 // Available returns the number of bytes currently available in the buffer.
 // If the buffer has not yet been filled, it returns Head (total bytes written).
 // Once the buffer has been filled at least once, it returns the buffer Size.
